@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="مكتبتي" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="application-name" content="مكتبتي" />
+<meta name="theme-color" content="#181510" />
+<title>مكتبتي - روايات</title>
+
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png" />
+<link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+<link rel="apple-touch-icon" sizes="152x152" href="./icon-152.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #181510; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif; }
+  input, textarea, button { font-family: inherit; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script>
+/* بديل محلي لواجهة window.storage الخاصة بمنصة Claude، يعمل عبر localStorage
+   حتى يشتغل التطبيق بشكل مستقل بعد تحميله على أي جهاز/متصفح. */
+window.storage = {
+  async get(key) {
+    const v = localStorage.getItem(key);
+    if (v === null) throw new Error("not found");
+    return { key, value: v };
+  },
+  async set(key, value) {
+    localStorage.setItem(key, value);
+    return { key, value };
+  },
+  async delete(key) {
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  },
+  async list(prefix) {
+    const keys = Object.keys(localStorage).filter((k) => !prefix || k.startsWith(prefix));
+    return { keys };
+  },
+};
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ========================================================================
+   أيقونات SVG بسيطة (بديل عن مكتبة lucide-react حتى يعمل الملف بشكل مستقل)
+   ======================================================================== */
+function Plus({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+function ArrowRight({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  );
+}
+function Trash2({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  );
+}
+function BookOpen({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M2 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2z" />
+      <path d="M22 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z" />
+    </svg>
+  );
+}
+function ImageIcon({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
+    </svg>
+  );
+}
+function Check({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+/* ========================================================================
+   تخزين البيانات
+   novels        -> [{ id, title, cover, createdAt }]
+   chapters:<id> -> [{ id, number, title, content, updatedAt }]
+   ======================================================================== */
+
+async function loadNovels() {
+  try {
+    const res = await window.storage.get("novels");
+    return res ? JSON.parse(res.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveNovels(novels) {
+  try {
+    await window.storage.set("novels", JSON.stringify(novels));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function loadChapters(novelId) {
+  try {
+    const res = await window.storage.get(`chapters:${novelId}`);
+    return res ? JSON.parse(res.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveChapters(novelId, chapters) {
+  try {
+    await window.storage.set(`chapters:${novelId}`, JSON.stringify(chapters));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function deleteChaptersKey(novelId) {
+  try {
+    await window.storage.delete(`chapters:${novelId}`);
+  } catch {
+    /* ignore */
+  }
+}
+
+function resizeImage(file, maxW = 480, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("image load failed"));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/* ======================== مكوّن التأكيد ======================== */
+function ConfirmDialog({ open, title, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(10,9,6,0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 50,
+        padding: 20,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#211d16",
+          border: "1px solid #3a3427",
+          borderRadius: 14,
+          padding: "24px 20px",
+          width: "100%",
+          maxWidth: 340,
+          textAlign: "center",
+        }}
+      >
+        <p style={{ color: "#EDE6D6", fontSize: 16, margin: "0 0 20px", lineHeight: 1.6 }}>
+          {title}
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: "11px 0",
+              borderRadius: 10,
+              border: "1px solid #4a4335",
+              background: "transparent",
+              color: "#C9BFA8",
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              flex: 1,
+              padding: "11px 0",
+              borderRadius: 10,
+              border: "none",
+              background: "#B14B3F",
+              color: "#F5EDE2",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            حذف
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ======================== شريط علوي بسيط ======================== */
+function TopBar({ title, onBack, actions }) {
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "16px 16px",
+        background: "linear-gradient(#181510f0, #181510e0)",
+        backdropFilter: "blur(6px)",
+        borderBottom: "1px solid #2a2519",
+      }}
+    >
+      {onBack ? (
+        <button
+          onClick={onBack}
+          aria-label="رجوع"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#C9A227",
+            cursor: "pointer",
+            display: "flex",
+            padding: 4,
+          }}
+        >
+          <ArrowRight size={22} />
+        </button>
+      ) : (
+        <div style={{ width: 22 }} />
+      )}
+      <h1
+        style={{
+          flex: 1,
+          margin: 0,
+          fontSize: 17,
+          fontWeight: 600,
+          color: "#EDE6D6",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {title}
+      </h1>
+      <div style={{ display: "flex", gap: 6, minWidth: 22, justifyContent: "flex-end" }}>{actions}</div>
+    </div>
+  );
+}
+
+/* ======================== المكتبة (الرئيسية) ======================== */
+function LibraryView({ novels, onOpenNovel, onAddNovel, onDeleteNovel }) {
+  const [confirmId, setConfirmId] = useState(null);
+
+  return (
+    <div>
+      <TopBar title="مكتبتي" />
+      <div style={{ padding: "8px 16px 100px" }}>
+        {novels.length === 0 ? (
+          <div style={{ textAlign: "center", marginTop: "22vh", color: "#8a8168" }}>
+            <BookOpen size={40} style={{ opacity: 0.5, marginBottom: 14 }} />
+            <p style={{ fontSize: 15, margin: 0 }}>مكتبتك فارغة الآن</p>
+            <p style={{ fontSize: 13, margin: "6px 0 0", color: "#6d6552" }}>
+              اضغط على ＋ لإضافة أول رواية
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+              gap: 16,
+              marginTop: 12,
+            }}
+          >
+            {novels.map((n) => (
+              <div key={n.id} style={{ position: "relative" }}>
+                <button
+                  onClick={() => onOpenNovel(n.id)}
+                  style={{
+                    width: "100%",
+                    padding: 0,
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    textAlign: "right",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "100%",
+                      aspectRatio: "3/4.3",
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      background: "#26221a",
+                      border: "1px solid #332e22",
+                      boxShadow: "0 6px 16px rgba(0,0,0,0.35)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {n.cover ? (
+                      <img
+                        src={n.cover}
+                        alt={n.title}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <ImageIcon size={26} color="#5c5540" />
+                    )}
+                  </div>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "#DCD3BC",
+                      margin: "8px 2px 0",
+                      lineHeight: 1.4,
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {n.title}
+                  </p>
+                </button>
+                <button
+                  onClick={() => setConfirmId(n.id)}
+                  aria-label="حذف الرواية"
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    left: 6,
+                    background: "rgba(10,9,6,0.55)",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: 6,
+                    cursor: "pointer",
+                    color: "#E8DFCB",
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={onAddNovel}
+        aria-label="إضافة رواية"
+        style={{
+          position: "fixed",
+          bottom: 26,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 58,
+          height: 58,
+          borderRadius: "50%",
+          border: "none",
+          background: "#C9A227",
+          color: "#181510",
+          fontSize: 28,
+          fontWeight: 300,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          boxShadow: "0 8px 22px rgba(201,162,39,0.35)",
+        }}
+      >
+        <Plus size={28} strokeWidth={2.4} />
+      </button>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="هل أنت متأكد من حذف هذه الرواية وجميع فصولها؟"
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => {
+          onDeleteNovel(confirmId);
+          setConfirmId(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ======================== إضافة رواية ======================== */
+function AddNovelView({ onBack, onSave }) {
+  const [title, setTitle] = useState("");
+  const [cover, setCover] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await resizeImage(file);
+      setCover(dataUrl);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleSave() {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    await onSave({ title: title.trim(), cover });
+    setBusy(false);
+  }
+
+  return (
+    <div>
+      <TopBar title="إضافة رواية" onBack={onBack} />
+      <div style={{ padding: "24px 20px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{
+            width: 160,
+            aspectRatio: "3/4.3",
+            borderRadius: 12,
+            border: "1.5px dashed #4a4335",
+            background: "#211d16",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            cursor: "pointer",
+            overflow: "hidden",
+            color: "#8a8168",
+          }}
+        >
+          {cover ? (
+            <img src={cover} alt="الغلاف" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <>
+              <ImageIcon size={26} />
+              <span style={{ fontSize: 12 }}>إضافة صورة غلاف</span>
+            </>
+          )}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="اسم الرواية"
+          dir="rtl"
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginTop: 24,
+            padding: "13px 14px",
+            borderRadius: 10,
+            border: "1px solid #3a3427",
+            background: "#1c1911",
+            color: "#EDE6D6",
+            fontSize: 15,
+            outline: "none",
+          }}
+        />
+
+        <button
+          onClick={handleSave}
+          disabled={!title.trim() || busy}
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginTop: 20,
+            padding: "13px 0",
+            borderRadius: 10,
+            border: "none",
+            background: title.trim() ? "#C9A227" : "#3a3427",
+            color: title.trim() ? "#181510" : "#8a8168",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: title.trim() ? "pointer" : "default",
+          }}
+        >
+          {busy ? "جارٍ الحفظ..." : "حفظ"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ======================== صفحة الرواية (قائمة الفصول) ======================== */
+function NovelView({ novel, chapters, onBack, onOpenChapter, onAddChapter, onDeleteChapter }) {
+  const [confirmId, setConfirmId] = useState(null);
+  const sorted = [...chapters].sort((a, b) => a.number - b.number);
+
+  return (
+    <div>
+      <TopBar title={novel.title} onBack={onBack} />
+      <div style={{ padding: "20px 20px 100px" }}>
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+          <div
+            style={{
+              width: 84,
+              aspectRatio: "3/4.3",
+              borderRadius: 10,
+              overflow: "hidden",
+              background: "#26221a",
+              border: "1px solid #332e22",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {novel.cover ? (
+              <img src={novel.cover} alt={novel.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <ImageIcon size={22} color="#5c5540" />
+            )}
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, color: "#EDE6D6", lineHeight: 1.4 }}>{novel.title}</h2>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#8a8168" }}>
+              {sorted.length} {sorted.length === 1 ? "فصل" : "فصول"}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 30, marginBottom: 10 }}>
+          <span style={{ fontSize: 14, color: "#C9BFA8", fontWeight: 600 }}>الفصول</span>
+          <button
+            onClick={onAddChapter}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "1px solid #4a4335",
+              borderRadius: 20,
+              padding: "7px 14px",
+              color: "#C9A227",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            <Plus size={15} />
+            إضافة فصل
+          </button>
+        </div>
+
+        {sorted.length === 0 ? (
+          <p style={{ color: "#6d6552", fontSize: 14, marginTop: 30, textAlign: "center" }}>
+            لا توجد فصول بعد
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {sorted.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "#1c1911",
+                  border: "1px solid #2a2519",
+                  borderRadius: 10,
+                  padding: "13px 14px",
+                }}
+              >
+                <button
+                  onClick={() => onOpenChapter(c.id)}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    textAlign: "right",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  <div style={{ color: "#EDE6D6", fontSize: 14.5, fontWeight: 600 }}>
+                    الفصل {c.number}
+                    {c.title ? ` — ${c.title}` : ""}
+                  </div>
+                </button>
+                <button
+                  onClick={() => setConfirmId(c.id)}
+                  aria-label="حذف الفصل"
+                  style={{ background: "transparent", border: "none", color: "#8a8168", cursor: "pointer", padding: 4 }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="هل أنت متأكد من حذف هذا الفصل؟"
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => {
+          onDeleteChapter(confirmId);
+          setConfirmId(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ======================== محرر الفصل (إضافة/تعديل) ======================== */
+function ChapterEditor({ initial, nextNumber, onBack, onSave }) {
+  const [number, setNumber] = useState(initial ? initial.number : nextNumber);
+  const [title, setTitle] = useState(initial ? initial.title || "" : "");
+  const [content, setContent] = useState(initial ? initial.content || "" : "");
+  const [savedFlash, setSavedFlash] = useState(false);
+  const autoSaveTimer = useRef(null);
+  const isEdit = !!initial;
+
+  const doSave = useCallback(
+    async (silent) => {
+      await onSave({ number: Number(number) || 1, title: title.trim(), content });
+      if (!silent) {
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 1200);
+      }
+    },
+    [number, title, content, onSave]
+  );
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      doSave(true);
+    }, 2500);
+    return () => clearTimeout(autoSaveTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, title, number]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <TopBar
+        title={isEdit ? "تعديل الفصل" : "فصل جديد"}
+        onBack={onBack}
+        actions={
+          <button
+            onClick={() => doSave(false)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              background: "#C9A227",
+              border: "none",
+              borderRadius: 8,
+              padding: "7px 12px",
+              color: "#181510",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            <Check size={14} />
+            حفظ
+          </button>
+        }
+      />
+
+      <div style={{ padding: "16px 18px 8px", display: "flex", gap: 10 }}>
+        <input
+          type="number"
+          value={number}
+          onChange={(e) => setNumber(e.target.value)}
+          placeholder="رقم الفصل"
+          style={{
+            width: 90,
+            padding: "10px 10px",
+            borderRadius: 8,
+            border: "1px solid #3a3427",
+            background: "#1c1911",
+            color: "#EDE6D6",
+            fontSize: 14,
+            textAlign: "center",
+          }}
+        />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="عنوان الفصل (اختياري)"
+          dir="rtl"
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: "1px solid #3a3427",
+            background: "#1c1911",
+            color: "#EDE6D6",
+            fontSize: 14,
+          }}
+        />
+      </div>
+
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="ابدأ الكتابة هنا..."
+        dir="auto"
+        style={{
+          flex: 1,
+          margin: "10px 18px 24px",
+          padding: "16px 4px",
+          border: "none",
+          borderTop: "1px solid #2a2519",
+          background: "transparent",
+          color: "#EAE2CC",
+          fontSize: 17,
+          lineHeight: 2,
+          fontFamily: "Georgia, 'Traditional Arabic', 'Noto Naskh Arabic', serif",
+          resize: "none",
+          outline: "none",
+          minHeight: "55vh",
+        }}
+      />
+
+      <div
+        style={{
+          position: "fixed",
+          bottom: savedFlash ? 20 : -40,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#2c2818",
+          border: "1px solid #C9A227",
+          color: "#C9A227",
+          fontSize: 12.5,
+          padding: "8px 16px",
+          borderRadius: 20,
+          transition: "bottom 0.25s ease",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <Check size={13} /> تم الحفظ
+      </div>
+    </div>
+  );
+}
+
+/* ======================== التطبيق الرئيسي ======================== */
+function App() {
+  const [loading, setLoading] = useState(true);
+  const [novels, setNovels] = useState([]);
+  const [chaptersCache, setChaptersCache] = useState({});
+  const [view, setView] = useState("library");
+  const [currentNovelId, setCurrentNovelId] = useState(null);
+  const [currentChapterId, setCurrentChapterId] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const n = await loadNovels();
+      setNovels(n);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function openNovel(id) {
+    setCurrentNovelId(id);
+    if (!chaptersCache[id]) {
+      const ch = await loadChapters(id);
+      setChaptersCache((prev) => ({ ...prev, [id]: ch }));
+    }
+    setView("novel");
+  }
+
+  async function handleAddNovel({ title, cover }) {
+    const novel = { id: uid(), title, cover, createdAt: Date.now() };
+    const updated = [novel, ...novels];
+    setNovels(updated);
+    await saveNovels(updated);
+    setView("library");
+  }
+
+  async function handleDeleteNovel(id) {
+    const updated = novels.filter((n) => n.id !== id);
+    setNovels(updated);
+    await saveNovels(updated);
+    await deleteChaptersKey(id);
+    setChaptersCache((prev) => {
+      const c = { ...prev };
+      delete c[id];
+      return c;
+    });
+  }
+
+  async function handleAddChapter({ number, title, content }) {
+    const list = chaptersCache[currentNovelId] || [];
+    const chapter = { id: uid(), number, title, content, updatedAt: Date.now() };
+    const updated = [...list, chapter];
+    setChaptersCache((prev) => ({ ...prev, [currentNovelId]: updated }));
+    await saveChapters(currentNovelId, updated);
+    setView("novel");
+  }
+
+  async function handleUpdateChapter(chapterId, { number, title, content }) {
+    const list = chaptersCache[currentNovelId] || [];
+    const updated = list.map((c) =>
+      c.id === chapterId ? { ...c, number, title, content, updatedAt: Date.now() } : c
+    );
+    setChaptersCache((prev) => ({ ...prev, [currentNovelId]: updated }));
+    await saveChapters(currentNovelId, updated);
+  }
+
+  async function handleDeleteChapter(chapterId) {
+    const list = chaptersCache[currentNovelId] || [];
+    const updated = list.filter((c) => c.id !== chapterId);
+    setChaptersCache((prev) => ({ ...prev, [currentNovelId]: updated }));
+    await saveChapters(currentNovelId, updated);
+  }
+
+  const shell = {
+    minHeight: "100vh",
+    background: "#181510",
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif",
+    direction: "rtl",
+    maxWidth: 480,
+    margin: "0 auto",
+    position: "relative",
+  };
+
+  if (loading) {
+    return (
+      <div style={{ ...shell, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#8a8168", fontSize: 14 }}>جارٍ التحميل...</span>
+      </div>
+    );
+  }
+
+  const currentNovel = novels.find((n) => n.id === currentNovelId);
+  const currentChapters = chaptersCache[currentNovelId] || [];
+  const currentChapter = currentChapters.find((c) => c.id === currentChapterId);
+  const nextNumber = currentChapters.length
+    ? Math.max(...currentChapters.map((c) => c.number)) + 1
+    : 1;
+
+  return (
+    <div style={shell}>
+      {view === "library" && (
+        <LibraryView
+          novels={novels}
+          onOpenNovel={openNovel}
+          onAddNovel={() => setView("addNovel")}
+          onDeleteNovel={handleDeleteNovel}
+        />
+      )}
+
+      {view === "addNovel" && <AddNovelView onBack={() => setView("library")} onSave={handleAddNovel} />}
+
+      {view === "novel" && currentNovel && (
+        <NovelView
+          novel={currentNovel}
+          chapters={currentChapters}
+          onBack={() => setView("library")}
+          onOpenChapter={(id) => {
+            setCurrentChapterId(id);
+            setView("editChapter");
+          }}
+          onAddChapter={() => setView("addChapter")}
+          onDeleteChapter={handleDeleteChapter}
+        />
+      )}
+
+      {view === "addChapter" && (
+        <ChapterEditor
+          initial={null}
+          nextNumber={nextNumber}
+          onBack={() => setView("novel")}
+          onSave={handleAddChapter}
+        />
+      )}
+
+      {view === "editChapter" && currentChapter && (
+        <ChapterEditor
+          initial={currentChapter}
+          nextNumber={currentChapter.number}
+          onBack={() => setView("novel")}
+          onSave={(data) => handleUpdateChapter(currentChapter.id, data)}
+        />
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+
+<script>
+  // تسجيل الـ Service Worker لتفعيل عمل التطبيق بدون إنترنت
+  // (يعمل فقط عند تشغيل الموقع عبر https أو من جهاز محلي عبر خادم، وليس عبر فتح الملف مباشرة)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
