@@ -1,0 +1,3329 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="مكتبتي" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="application-name" content="مكتبتي" />
+<meta name="theme-color" content="#130d0c" />
+<title>مكتبتي - روايات</title>
+
+<!--
+  تغيير شعار التطبيق (Logo):
+  يعتمد التطبيق بالكامل على ملفات الأيقونات التالية بنفس الأسماء والمقاسات:
+  favicon-16.png, favicon-32.png, apple-touch-icon.png, icon-48/72/96/128/144/152/180/192/384/512.png,
+  icon-maskable-512.png
+  لتغيير الشعار: استبدل هذه الملفات بنفس الأسماء والمقاسات بصورة الشعار الجديد (لا حاجة لتعديل أي كود).
+  عند رفع نسخة محدّثة، يقوم sw.js تلقائيًا بحذف الكاش القديم بعد رفع رقم النسخة (CACHE_NAME) في sw.js.
+-->
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png" />
+<link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+<link rel="apple-touch-icon" sizes="152x152" href="./icon-152.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #130d0c; overscroll-behavior-y: none; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif; }
+  input, textarea, button { font-family: inherit; }
+  button { user-select: none; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+</script>
+
+<script>
+/* بديل محلي لواجهة window.storage الخاصة بمنصة Claude، يعمل عبر localStorage
+   حتى يشتغل التطبيق بشكل مستقل بعد تحميله على أي جهاز/متصفح. */
+window.storage = {
+  async get(key) {
+    const v = localStorage.getItem(key);
+    if (v === null) throw new Error("not found");
+    return { key, value: v };
+  },
+  async set(key, value) {
+    localStorage.setItem(key, value);
+    return { key, value };
+  },
+  async delete(key) {
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  },
+  async list(prefix) {
+    const keys = Object.keys(localStorage).filter((k) => !prefix || k.startsWith(prefix));
+    return { keys };
+  },
+};
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback, useMemo, Fragment } = React;
+
+/* ========================================================================
+   أيقونات SVG بسيطة (بديل عن مكتبة lucide-react حتى يعمل الملف بشكل مستقل)
+   ======================================================================== */
+function Plus({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+function ArrowRight({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  );
+}
+function Trash2({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  );
+}
+function BookOpen({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M2 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2z" />
+      <path d="M22 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z" />
+    </svg>
+  );
+}
+function ImageIcon({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
+    </svg>
+  );
+}
+function Check({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+function Pencil({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+function Clock({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </svg>
+  );
+}
+function SettingsIcon({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.5v3.4M12 18.1v3.4M4.2 4.2l2.4 2.4M17.4 17.4l2.4 2.4M2.5 12h3.4M18.1 12h3.4M4.2 19.8l2.4-2.4M17.4 6.6l2.4-2.4" />
+    </svg>
+  );
+}
+function Download({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M12 3v12" />
+      <polyline points="7 10 12 15 17 10" />
+      <path d="M4 19h16" />
+    </svg>
+  );
+}
+function Upload({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M12 21V9" />
+      <polyline points="7 14 12 9 17 14" />
+      <path d="M4 5h16" />
+    </svg>
+  );
+}
+function Globe({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <circle cx="12" cy="12" r="9" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+    </svg>
+  );
+}
+function FileText({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="16" y2="17" />
+    </svg>
+  );
+}
+function RefreshCw({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+function Copy({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+function AlertTriangle({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+function ChevronDown({ size = 24, color = "currentColor", strokeWidth = 2, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+/* ========================================================================
+   زخارف بصرية بطابع صيني/روائي (سحابة الحظ، الكركي رمز الخلود، زوايا مذهّبة،
+   حلقة العملة القديمة) - رسومات متجهية فقط بلا أي كتابة أو حروف
+   ======================================================================== */
+function CloudMotif({ width = 100, height = 50, color = "#d4af37", opacity = 1, style }) {
+  return (
+    <svg width={width} height={height} viewBox="0 0 100 50" style={{ opacity, display: "block", ...style }}>
+      <path
+        d="M22 37 C11 37 7 28 14 23 C12 14 23 9 31 14 C36 5 50 5 55 14 C65 9 78 15 73 25 C82 26 82 37 71 37 Z"
+        fill={color}
+      />
+      <path d="M71 37 C79 39.5 84 36 89 39.5" stroke={color} strokeWidth="2.6" fill="none" strokeLinecap="round" />
+      <path d="M14 37 C9 38.5 6 37 3 39" stroke={color} strokeWidth="2.2" fill="none" strokeLinecap="round" opacity="0.85" />
+    </svg>
+  );
+}
+function CraneMotif({ size = 64, color = "#cbb896", strokeWidth = 2.2, style }) {
+  return (
+    <svg width={size} height={size * 0.86} viewBox="0 0 100 86" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <path d="M22 50 C19 39 26 29 37 27 C44 26 50 29 53 35" />
+      <path d="M53 35 C60 33 66 25 64 16 C63 11 58 9 55 12 C52 15 53 20 57 22" />
+      <path d="M64 16 L73 12.5" />
+      <path d="M33 34 C40 43 52 48 63 45 C56 52 43 54 34 49" opacity="0.9" />
+      <path d="M22 50 C16 53 10 53 5 57" />
+      <path d="M40 63 L38 82" />
+      <path d="M32 82 L46 82" />
+      <path d="M38 71 L29 78" />
+    </svg>
+  );
+}
+function CornerOrnament({ size = 26, color = "#d4af37", strokeWidth = 1.6, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" style={style}>
+      <path d="M3 15 V3 H15" />
+      <path d="M3 3 C13 3 17 9 17 18" opacity="0.55" />
+      <circle cx="3" cy="3" r="1.8" fill={color} stroke="none" />
+    </svg>
+  );
+}
+function CoinRing({ size = 40, color = "#a4302b", style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" style={style}>
+      <circle cx="20" cy="20" r="18" fill="none" stroke={color} strokeWidth="1.8" />
+      <circle cx="20" cy="20" r="13.5" fill="none" stroke={color} strokeWidth="1" opacity="0.55" />
+      <rect x="14.5" y="14.5" width="11" height="11" fill="none" stroke={color} strokeWidth="1.8" />
+    </svg>
+  );
+}
+function OrnamentBead({ size = 12, color = "#a4302b", center = "#d4af37", style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 10 10" style={{ display: "block", ...style }}>
+      <path d="M5 0 L8.4 5 L5 10 L1.6 5 Z" fill={color} />
+      <circle cx="5" cy="5" r="1.1" fill={center} />
+    </svg>
+  );
+}
+
+/* ========================================================================
+   تخزين البيانات
+   novels          -> [{ id, title, cover, createdAt }]
+   chapters:<id>   -> [{ id, number, title, content, updatedAt }]
+   progress:<id>   -> { chapterId, chapterNumber, chapterTitle, scrollOffset, updatedAt }
+   historyOrder    -> [novelId, ...] مرتبة من الأحدث للأقدم
+   ======================================================================== */
+
+async function loadNovels() {
+  try {
+    const res = await window.storage.get("novels");
+    return res ? JSON.parse(res.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveNovels(novels) {
+  try {
+    await window.storage.set("novels", JSON.stringify(novels));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function loadChapters(novelId) {
+  try {
+    const res = await window.storage.get(`chapters:${novelId}`);
+    return res ? JSON.parse(res.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveChapters(novelId, chapters) {
+  try {
+    await window.storage.set(`chapters:${novelId}`, JSON.stringify(chapters));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function deleteChaptersKey(novelId) {
+  try {
+    await window.storage.delete(`chapters:${novelId}`);
+  } catch {
+    /* ignore */
+  }
+}
+async function loadProgress(novelId) {
+  try {
+    const res = await window.storage.get(`progress:${novelId}`);
+    return res ? JSON.parse(res.value) : null;
+  } catch {
+    return null;
+  }
+}
+async function saveProgressStorage(novelId, progress) {
+  try {
+    await window.storage.set(`progress:${novelId}`, JSON.stringify(progress));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function deleteProgressKey(novelId) {
+  try {
+    await window.storage.delete(`progress:${novelId}`);
+  } catch {
+    /* ignore */
+  }
+}
+async function loadHistoryOrder() {
+  try {
+    const res = await window.storage.get("historyOrder");
+    const list = res ? JSON.parse(res.value) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+async function saveHistoryOrder(order) {
+  try {
+    await window.storage.set("historyOrder", JSON.stringify(order));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* ========================================================================
+   تخزين بيانات ميزة «الترجمة»
+   translateConfig      -> { backendUrl, clientToken }
+   translateJobsIndex   -> [{ id, novelTitle, status, totalChapters, currentChapterIndex, lastError, addedToLibraryNovelId, createdAt, updatedAt }]
+   translateJob:<id>    -> { id, novelTitle, fileName, fileSize, status, chapters:[...], totalChapters,
+                              currentChapterIndex, glossary, createdAt, addedToLibraryNovelId, lastError }
+   ======================================================================== */
+async function loadTranslateConfig() {
+  try {
+    const res = await window.storage.get("translateConfig");
+    const cfg = res ? JSON.parse(res.value) : null;
+    return cfg && typeof cfg === "object" ? { backendUrl: cfg.backendUrl || "", clientToken: cfg.clientToken || "" } : { backendUrl: "", clientToken: "" };
+  } catch {
+    return { backendUrl: "", clientToken: "" };
+  }
+}
+async function saveTranslateConfig(cfg) {
+  try {
+    await window.storage.set("translateConfig", JSON.stringify(cfg));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function loadTranslateJobsIndex() {
+  try {
+    const res = await window.storage.get("translateJobsIndex");
+    const list = res ? JSON.parse(res.value) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+async function saveTranslateJobsIndex(list) {
+  try {
+    await window.storage.set("translateJobsIndex", JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function loadTranslateJob(id) {
+  try {
+    const res = await window.storage.get(`translateJob:${id}`);
+    return res ? JSON.parse(res.value) : null;
+  } catch {
+    return null;
+  }
+}
+async function saveTranslateJob(job) {
+  try {
+    await window.storage.set(`translateJob:${job.id}`, JSON.stringify(job));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function deleteTranslateJobKey(id) {
+  try {
+    await window.storage.delete(`translateJob:${id}`);
+  } catch {
+    /* ignore */
+  }
+}
+
+/* ========================================================================
+   محرّك الترجمة: استخراج PDF، تقسيم الفصول والمقاطع، الاتصال بالخادم الآمن
+   ======================================================================== */
+const TRANSLATE_FIXED_PROMPT =
+  "ترجم النص الصيني إلى العربية ترجمة دقيقة وسليمة وطبيعية. حافظ على المعنى الكامل للنص دون حذف أو إضافة أحداث. " +
+  "حافظ على أسماء الشخصيات والأماكن والمصطلحات الخاصة بالرواية واتساقها بين جميع الفصول. لا تلخص النص. لا تشرح النص. أخرج الترجمة فقط.";
+
+const GLOSSARY_EXTRACT_PROMPT =
+  "من النص الصيني التالي، استخرج فقط أسماء الشخصيات والأماكن والطوائف أو الفصائل والمهارات أو التقنيات والأسلحة " +
+  "والمصطلحات الخاصة بعالم الرواية. لكل مصطلح اقترح ترجمته العربية المناسبة والثابتة. أعد النتيجة بصيغة JSON فقط " +
+  "حسب المخطط المطلوب، دون أي شرح أو نص إضافي.";
+
+const TRANSLATE_CHUNK_MAX_CHARS = 3200;
+const GEMINI_MODEL = "gemini-flash-latest";
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/* تحويل الأرقام الصينية (十二، مئة، إلخ) إلى رقم عربي */
+const CHINESE_NUM_MAP = {
+  "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+  "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "百": 100, "千": 1000,
+};
+function chineseNumeralToInt(s) {
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  let section = 0;
+  let num = 0;
+  let matched = false;
+  for (const ch of s) {
+    const v = CHINESE_NUM_MAP[ch];
+    if (v === undefined) return null;
+    matched = true;
+    if (v === 10 || v === 100 || v === 1000) {
+      if (num === 0) num = 1;
+      section += num * v;
+      num = 0;
+    } else {
+      num = v;
+    }
+  }
+  if (!matched) return null;
+  const total = section + num;
+  return total || null;
+}
+
+/* اكتشاف الفصول من نص صيني متصل (第X章 / 第X回 / 第X节 ...) مع حفظ كل النص بلا حذف */
+const CHAPTER_LINE_RE = /^[\s　]*第\s*([0-9零〇一二三四五六七八九十百千两]+)\s*[章回节卷]\s*[:：、\-—.]?\s*(.*)$/;
+
+function detectChapters(fullText) {
+  const lines = (fullText || "").split(/\r?\n/);
+  const markers = [];
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length > 60) return; // عناوين الفصول عادة قصيرة، تجنّب مطابقات خاطئة داخل الحوار
+    const m = trimmed.match(CHAPTER_LINE_RE);
+    if (m) markers.push({ lineIndex: idx, number: chineseNumeralToInt(m[1]), title: (m[2] || "").trim() });
+  });
+
+  if (markers.length === 0) {
+    const text = (fullText || "").trim();
+    return text ? [{ number: 1, title: "", text }] : [];
+  }
+
+  const chapters = [];
+  if (markers[0].lineIndex > 0) {
+    const preface = lines.slice(0, markers[0].lineIndex).join("\n").trim();
+    if (preface) chapters.push({ number: 0, title: "مقدمة", text: preface });
+  }
+  for (let i = 0; i < markers.length; i++) {
+    const start = markers[i].lineIndex + 1;
+    const end = i + 1 < markers.length ? markers[i + 1].lineIndex : lines.length;
+    const body = lines.slice(start, end).join("\n").trim();
+    if (body) chapters.push({ number: markers[i].number || i + 1, title: markers[i].title, text: body });
+  }
+  return chapters;
+}
+
+/* تقسيم نص طويل إلى مقاطع دون قطع فقرة أو جملة */
+function splitLongParagraph(text, maxChars) {
+  const sentences = text.split(/(?<=[。！？!?.])/);
+  const parts = [];
+  let cur = "";
+  for (const s of sentences) {
+    if (cur && (cur + s).length > maxChars) {
+      parts.push(cur);
+      cur = s;
+    } else {
+      cur += s;
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts.length ? parts : [text];
+}
+function chunkText(text, maxChars = TRANSLATE_CHUNK_MAX_CHARS) {
+  const paragraphs = (text || "").split(/\n+/).map((p) => p.trim()).filter(Boolean);
+  const chunks = [];
+  let current = "";
+  for (const para of paragraphs) {
+    const candidate = current ? current + "\n\n" + para : para;
+    if (candidate.length > maxChars && current) {
+      chunks.push(current);
+      current = para;
+    } else {
+      current = candidate;
+    }
+    if (current.length > maxChars * 1.6) {
+      const parts = splitLongParagraph(current, maxChars);
+      chunks.push(...parts.slice(0, -1));
+      current = parts[parts.length - 1] || "";
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : text ? [text] : [];
+}
+
+/* استخراج نص PDF عبر pdf.js، مع تجميع القطع في أسطر حسب الإحداثي الرأسي */
+async function extractPdfText(file, onProgress) {
+  if (!window.pdfjsLib) throw new Error("تعذّر تحميل مكتبة قراءة PDF، تحقق من الاتصال بالإنترنت");
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = null;
+    let lineBuf = "";
+    const linesOut = [];
+    for (const item of content.items) {
+      const y = item.transform ? item.transform[5] : 0;
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        linesOut.push(lineBuf);
+        lineBuf = "";
+      }
+      lineBuf += item.str;
+      lastY = y;
+    }
+    if (lineBuf) linesOut.push(lineBuf);
+    fullText += linesOut.join("\n") + "\n";
+    if (onProgress) onProgress(i, pdf.numPages);
+    await sleep(0); // للسماح للواجهة بالتحديث وعدم التجميد
+  }
+  return fullText;
+}
+
+/* دمج قاموس المصطلحات: الأسبقية للمصطلح الذي تُرجم أولًا حتى لا يتغيّر لاحقًا */
+function mergeGlossary(existing, newTerms) {
+  const merged = { ...(existing || {}) };
+  for (const t of newTerms || []) {
+    if (t && t.source && t.arabic && !merged[t.source]) merged[t.source] = t.arabic;
+  }
+  return merged;
+}
+function glossaryAppendix(glossary) {
+  const entries = Object.entries(glossary || {});
+  if (!entries.length) return "";
+  const lines = entries.slice(0, 400).map(([src, ar]) => `${src} = ${ar}`).join("\n");
+  return "\n\nقائمة أسماء وأماكن ومصطلحات معتمدة سابقًا في هذه الرواية، التزم بترجمتها بنفس الشكل إذا تكررت:\n" + lines;
+}
+
+/* استدعاء خادم الترجمة الآمن (الذي يحمل مفتاح الـ API) */
+async function callGeminiProxy(backendUrl, clientToken, payload) {
+  if (!backendUrl) throw new Error("لم يتم إعداد رابط خادم الترجمة. أضفه من الإعدادات.");
+  const headers = { "Content-Type": "application/json" };
+  if (clientToken) headers["X-Client-Token"] = clientToken;
+  let res;
+  try {
+    res = await fetch(backendUrl, { method: "POST", headers, body: JSON.stringify(payload) });
+  } catch {
+    throw new Error("تعذّر الاتصال بخادم الترجمة، تحقق من الإنترنت");
+  }
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* قد لا يوجد جسم JSON عند بعض الأخطاء */
+  }
+  if (!res.ok) throw new Error((data && data.error) || `فشل طلب الترجمة (${res.status})`);
+  return data;
+}
+
+function extractGeminiText(data) {
+  const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+  return parts.map((p) => p.text || "").join("");
+}
+
+async function translateChunkWithRetry(text, glossary, backendUrl, clientToken, attempt = 1) {
+  const systemInstruction = TRANSLATE_FIXED_PROMPT + glossaryAppendix(glossary);
+  try {
+    const data = await callGeminiProxy(backendUrl, clientToken, {
+      model: GEMINI_MODEL,
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: { temperature: 0.25 },
+    });
+    const out = extractGeminiText(data).trim();
+    if (!out) throw new Error("رد فارغ من نموذج الترجمة");
+    return out;
+  } catch (e) {
+    if (attempt < 3) {
+      await sleep(1000 * Math.pow(2, attempt));
+      return translateChunkWithRetry(text, glossary, backendUrl, clientToken, attempt + 1);
+    }
+    throw e;
+  }
+}
+
+async function extractGlossaryTerms(sourceExcerpt, backendUrl, clientToken) {
+  if (!sourceExcerpt || !sourceExcerpt.trim()) return [];
+  const data = await callGeminiProxy(backendUrl, clientToken, {
+    model: GEMINI_MODEL,
+    systemInstruction: { parts: [{ text: GLOSSARY_EXTRACT_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: sourceExcerpt }] }],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          terms: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: { source: { type: "STRING" }, arabic: { type: "STRING" } },
+              required: ["source", "arabic"],
+            },
+          },
+        },
+        required: ["terms"],
+      },
+    },
+  });
+  try {
+    const parsed = JSON.parse(extractGeminiText(data));
+    return Array.isArray(parsed.terms) ? parsed.terms : [];
+  } catch {
+    return [];
+  }
+}
+
+function resizeImage(file, maxW = 480, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("image load failed"));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function chapterLabel(c) {
+  if (!c) return "";
+  return `الفصل ${c.number}${c.title ? " — " + c.title : ""}`;
+}
+
+/* توقيت نسبي بالعربية، تقريبي وكافٍ لعرض "آخر قراءة" */
+function formatRelativeAr(ts) {
+  if (!ts) return "";
+  const diff = Math.max(0, Date.now() - ts);
+  const min = Math.floor(diff / 60000);
+  const countPhrase = (n, singular, dual, plural) => {
+    if (n <= 0) return `${singular === "دقيقة" ? "أقل من دقيقة" : "الآن"}`;
+    if (n === 1) return `منذ ${singular}`;
+    if (n === 2) return `منذ ${dual}`;
+    if (n >= 3 && n <= 10) return `منذ ${n} ${plural}`;
+    return `منذ ${n} ${singular}`;
+  };
+  if (min < 1) return "الآن";
+  if (min < 60) return countPhrase(min, "دقيقة", "دقيقتين", "دقائق");
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return countPhrase(hr, "ساعة", "ساعتين", "ساعات");
+  const day = Math.floor(hr / 24);
+  if (day < 30) return countPhrase(day, "يوم", "يومين", "أيام");
+  const month = Math.floor(day / 30);
+  if (month < 12) return countPhrase(month, "شهر", "شهرين", "أشهر");
+  const year = Math.floor(month / 12);
+  return countPhrase(year, "سنة", "سنتين", "سنوات");
+}
+
+/* ======================== مكوّن التأكيد ======================== */
+function ConfirmDialog({ open, title, confirmLabel, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(10,9,6,0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 60,
+        padding: 20,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#1f1512",
+          border: "1px solid #3d241f",
+          borderRadius: 14,
+          padding: "24px 20px",
+          width: "100%",
+          maxWidth: 340,
+          textAlign: "center",
+        }}
+      >
+        <p style={{ color: "#f0e6d2", fontSize: 16, margin: "0 0 20px", lineHeight: 1.6 }}>
+          {title}
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: "11px 0",
+              borderRadius: 10,
+              border: "1px solid #4a3524",
+              background: "transparent",
+              color: "#cbb896",
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              flex: 1,
+              padding: "11px 0",
+              borderRadius: 10,
+              border: "none",
+              background: "#7a2420",
+              color: "#f7ede0",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {confirmLabel || "حذف"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ======================== شريط علوي بسيط ======================== */
+function TopBar({ title, subtitle, onBack, actions }) {
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "16px 16px",
+        background: "linear-gradient(#130d0cf0, #130d0ce0)",
+        backdropFilter: "blur(6px)",
+        borderBottom: "1px solid #241715",
+      }}
+    >
+      <CornerOrnament size={18} color="#d4af37" style={{ position: "absolute", top: 5, left: 8, opacity: 0.5, pointerEvents: "none" }} />
+      <CornerOrnament size={18} color="#d4af37" style={{ position: "absolute", top: 5, right: 8, opacity: 0.5, pointerEvents: "none", transform: "scaleX(-1)" }} />
+      {onBack ? (
+        <button
+          onClick={onBack}
+          aria-label="رجوع"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#d4af37",
+            cursor: "pointer",
+            display: "flex",
+            padding: 4,
+          }}
+        >
+          <ArrowRight size={22} />
+        </button>
+      ) : (
+        <div style={{ width: 22 }} />
+      )}
+      <div style={{ flex: 1, textAlign: "center", overflow: "hidden" }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 17,
+            fontWeight: 600,
+            color: "#f0e6d2",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {title}
+        </h1>
+        {subtitle ? (
+          <p
+            style={{
+              margin: "2px 0 0",
+              fontSize: 11.5,
+              color: "#a8815a",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {subtitle}
+          </p>
+        ) : null}
+      </div>
+      <div style={{ display: "flex", gap: 6, minWidth: 22, justifyContent: "flex-end" }}>{actions}</div>
+    </div>
+  );
+}
+
+/* ======================== شريط التنقل السفلي ======================== */
+function BottomNav({ active, onChange }) {
+  const items = [
+    { id: "library", label: "المكتبة", Icon: BookOpen },
+    { id: "translate", label: "الترجمة", Icon: Globe },
+    { id: "history", label: "السجل", Icon: Clock },
+    { id: "settings", label: "الإعدادات", Icon: SettingsIcon },
+  ];
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 0,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "100%",
+        maxWidth: 480,
+        display: "flex",
+        background: "#110b0a",
+        borderTop: "1px solid #241715",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        zIndex: 40,
+      }}
+    >
+      {items.map(({ id, label, Icon }) => {
+        const isActive = active === id;
+        return (
+          <button
+            key={id}
+            onClick={() => onChange(id)}
+            aria-label={label}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 3,
+              padding: "10px 0 9px",
+              background: "transparent",
+              border: "none",
+              color: isActive ? "#d4af37" : "#a8815a",
+              cursor: "pointer",
+            }}
+          >
+            <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
+            <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 500 }}>{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ======================== المكتبة (تبويب رئيسي) ======================== */
+function LibraryView({ novels, onOpenNovel, onAddNovel, onDeleteNovel }) {
+  const [confirmId, setConfirmId] = useState(null);
+
+  return (
+    <div>
+      <TopBar title="مكتبتي" />
+      <div style={{ padding: "8px 16px 150px" }}>
+        {novels.length === 0 ? (
+          <div style={{ textAlign: "center", marginTop: "18vh", color: "#a8815a" }}>
+            <div style={{ position: "relative", width: 130, height: 108, margin: "0 auto 8px" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  right: 14,
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  background: "radial-gradient(circle, #f0e6d2 0%, #d4af37 55%, transparent 78%)",
+                  opacity: 0.6,
+                }}
+              />
+              <CraneMotif size={82} color="#cbb896" strokeWidth={2} style={{ position: "absolute", left: 6, bottom: 18 }} />
+              <CloudMotif width={100} height={44} color="#3d241f" opacity={0.95} style={{ position: "absolute", bottom: 6, left: 10 }} />
+            </div>
+            <p style={{ fontSize: 15, margin: 0 }}>مكتبتك فارغة الآن</p>
+            <p style={{ fontSize: 13, margin: "6px 0 0", color: "#7a4a39" }}>
+              اضغط على ＋ لإضافة أول رواية
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+              gap: 16,
+              marginTop: 12,
+            }}
+          >
+            {novels.map((n) => (
+              <div key={n.id} style={{ position: "relative" }}>
+                <button
+                  onClick={() => onOpenNovel(n.id)}
+                  style={{
+                    width: "100%",
+                    padding: 0,
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    textAlign: "right",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "100%",
+                      aspectRatio: "3/4.3",
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      background: "#221513",
+                      border: "1px solid #2c1c17",
+                      boxShadow: "0 6px 16px rgba(0,0,0,0.35)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      position: "relative",
+                    }}
+                  >
+                    {n.cover ? (
+                      <img
+                        src={n.cover}
+                        alt={n.title}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <ImageIcon size={26} color="#5c3a2d" />
+                    )}
+                    <CornerOrnament size={15} color="#d4af37" style={{ position: "absolute", top: 4, left: 4, opacity: 0.6, pointerEvents: "none" }} />
+                    <CornerOrnament size={15} color="#d4af37" style={{ position: "absolute", bottom: 4, right: 4, opacity: 0.6, pointerEvents: "none", transform: "rotate(180deg)" }} />
+                  </div>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "#ddd0b8",
+                      margin: "8px 2px 0",
+                      lineHeight: 1.4,
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {n.title}
+                  </p>
+                </button>
+                <button
+                  onClick={() => setConfirmId(n.id)}
+                  aria-label="حذف الرواية"
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    left: 6,
+                    background: "rgba(10,9,6,0.55)",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: 6,
+                    cursor: "pointer",
+                    color: "#eadfc8",
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          position: "fixed",
+          bottom: "calc(78px + env(safe-area-inset-bottom, 0px))",
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 58,
+          height: 58,
+          zIndex: 41,
+        }}
+      >
+        <CoinRing
+          size={84}
+          color="#a4302b"
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            opacity: 0.5,
+            pointerEvents: "none",
+          }}
+        />
+        <button
+          onClick={onAddNovel}
+          aria-label="إضافة رواية"
+          style={{
+            position: "relative",
+            width: 58,
+            height: 58,
+            borderRadius: "50%",
+            border: "none",
+            background: "#d4af37",
+            color: "#130d0c",
+            fontSize: 28,
+            fontWeight: 300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            boxShadow: "0 8px 22px rgba(212,175,55,0.35)",
+          }}
+        >
+          <Plus size={28} strokeWidth={2.4} />
+        </button>
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="هل أنت متأكد من حذف هذه الرواية وجميع فصولها؟"
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => {
+          onDeleteNovel(confirmId);
+          setConfirmId(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ======================== إضافة رواية ======================== */
+function AddNovelView({ onBack, onSave }) {
+  const [title, setTitle] = useState("");
+  const [cover, setCover] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await resizeImage(file);
+      setCover(dataUrl);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleSave() {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    await onSave({ title: title.trim(), cover });
+    setBusy(false);
+  }
+
+  return (
+    <div>
+      <TopBar title="إضافة رواية" onBack={onBack} />
+      <div style={{ padding: "24px 20px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{
+            width: 160,
+            aspectRatio: "3/4.3",
+            borderRadius: 12,
+            border: "1.5px dashed #4a3524",
+            background: "#1f1512",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            cursor: "pointer",
+            overflow: "hidden",
+            color: "#a8815a",
+          }}
+        >
+          {cover ? (
+            <img src={cover} alt="الغلاف" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <>
+              <ImageIcon size={26} />
+              <span style={{ fontSize: 12 }}>إضافة صورة غلاف</span>
+            </>
+          )}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="اسم الرواية"
+          dir="rtl"
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginTop: 24,
+            padding: "13px 14px",
+            borderRadius: 10,
+            border: "1px solid #3d241f",
+            background: "#1a1210",
+            color: "#f0e6d2",
+            fontSize: 15,
+            outline: "none",
+          }}
+        />
+
+        <button
+          onClick={handleSave}
+          disabled={!title.trim() || busy}
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginTop: 20,
+            padding: "13px 0",
+            borderRadius: 10,
+            border: "none",
+            background: title.trim() ? "#d4af37" : "#3d241f",
+            color: title.trim() ? "#130d0c" : "#a8815a",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: title.trim() ? "pointer" : "default",
+          }}
+        >
+          {busy ? "جارٍ الحفظ..." : "حفظ"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ======================== صفحة الرواية (قائمة الفصول) ======================== */
+function NovelView({ novel, chapters, progress, onBack, onOpenReader, onEditChapter, onAddChapter, onDeleteChapter, onContinueReading }) {
+  const [confirmId, setConfirmId] = useState(null);
+  const sorted = [...chapters].sort((a, b) => a.number - b.number);
+  const hasValidProgress = !!(progress && sorted.some((c) => c.id === progress.chapterId));
+
+  return (
+    <div>
+      <TopBar title={novel.title} onBack={onBack} />
+      <div style={{ padding: "20px 20px 100px" }}>
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+          <div
+            style={{
+              width: 84,
+              aspectRatio: "3/4.3",
+              borderRadius: 10,
+              overflow: "hidden",
+              background: "#221513",
+              border: "1px solid #2c1c17",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              position: "relative",
+            }}
+          >
+            {novel.cover ? (
+              <img src={novel.cover} alt={novel.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <ImageIcon size={22} color="#5c3a2d" />
+            )}
+            <CornerOrnament size={14} color="#d4af37" style={{ position: "absolute", top: 3, left: 3, opacity: 0.6, pointerEvents: "none" }} />
+            <CornerOrnament size={14} color="#d4af37" style={{ position: "absolute", bottom: 3, right: 3, opacity: 0.6, pointerEvents: "none", transform: "rotate(180deg)" }} />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, color: "#f0e6d2", lineHeight: 1.4 }}>{novel.title}</h2>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#a8815a" }}>
+              {sorted.length} {sorted.length === 1 ? "فصل" : "فصول"}
+            </p>
+          </div>
+        </div>
+
+        {hasValidProgress && (
+          <button
+            onClick={onContinueReading}
+            style={{
+              marginTop: 20,
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              background: "#231613",
+              border: "1px solid #4a2e21",
+              borderRadius: 12,
+              padding: "13px 16px",
+              cursor: "pointer",
+              textAlign: "right",
+            }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 8, color: "#d4af37", fontSize: 13.5, fontWeight: 700 }}>
+              <BookOpen size={16} />
+              متابعة القراءة
+            </span>
+            <span style={{ color: "#cbb896", fontSize: 12.5 }}>
+              {chapterLabel({ number: progress.chapterNumber, title: progress.chapterTitle })}
+            </span>
+          </button>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 30, marginBottom: 10 }}>
+          <span style={{ fontSize: 14, color: "#cbb896", fontWeight: 600 }}>الفصول</span>
+          <button
+            onClick={onAddChapter}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "1px solid #4a3524",
+              borderRadius: 20,
+              padding: "7px 14px",
+              color: "#d4af37",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            <Plus size={15} />
+            إضافة فصل
+          </button>
+        </div>
+
+        {sorted.length === 0 ? (
+          <p style={{ color: "#7a4a39", fontSize: 14, marginTop: 30, textAlign: "center" }}>
+            لا توجد فصول بعد
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {sorted.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "#1a1210",
+                  border: "1px solid #241715",
+                  borderRadius: 10,
+                  padding: "13px 14px",
+                }}
+              >
+                <button
+                  onClick={() => onOpenReader(c.id)}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    textAlign: "right",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  <div style={{ color: "#f0e6d2", fontSize: 14.5, fontWeight: 600 }}>
+                    {chapterLabel(c)}
+                  </div>
+                </button>
+                <button
+                  onClick={() => onEditChapter(c.id)}
+                  aria-label="تعديل الفصل"
+                  style={{ background: "transparent", border: "none", color: "#a8815a", cursor: "pointer", padding: 4 }}
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  onClick={() => setConfirmId(c.id)}
+                  aria-label="حذف الفصل"
+                  style={{ background: "transparent", border: "none", color: "#a8815a", cursor: "pointer", padding: 4 }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="هل أنت متأكد من حذف هذا الفصل؟"
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => {
+          onDeleteChapter(confirmId);
+          setConfirmId(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ======================== محرر الفصل (إضافة/تعديل) ======================== */
+function ChapterEditor({ initial, nextNumber, onBack, onSave }) {
+  const [number, setNumber] = useState(initial ? initial.number : nextNumber);
+  const [title, setTitle] = useState(initial ? initial.title || "" : "");
+  const [content, setContent] = useState(initial ? initial.content || "" : "");
+  const [savedFlash, setSavedFlash] = useState(false);
+  const autoSaveTimer = useRef(null);
+  const isEdit = !!initial;
+
+  const doSave = useCallback(
+    async (silent) => {
+      await onSave({ number: Number(number) || 1, title: title.trim(), content });
+      if (!silent) {
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 1200);
+      }
+    },
+    [number, title, content, onSave]
+  );
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      doSave(true);
+    }, 2500);
+    return () => clearTimeout(autoSaveTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, title, number]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <TopBar
+        title={isEdit ? "تعديل الفصل" : "فصل جديد"}
+        onBack={onBack}
+        actions={
+          <button
+            onClick={() => doSave(false)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              background: "#d4af37",
+              border: "none",
+              borderRadius: 8,
+              padding: "7px 12px",
+              color: "#130d0c",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            <Check size={14} />
+            حفظ
+          </button>
+        }
+      />
+
+      <div style={{ padding: "16px 18px 8px", display: "flex", gap: 10 }}>
+        <input
+          type="number"
+          value={number}
+          onChange={(e) => setNumber(e.target.value)}
+          placeholder="رقم الفصل"
+          style={{
+            width: 90,
+            padding: "10px 10px",
+            borderRadius: 8,
+            border: "1px solid #3d241f",
+            background: "#1a1210",
+            color: "#f0e6d2",
+            fontSize: 14,
+            textAlign: "center",
+          }}
+        />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="عنوان الفصل (اختياري)"
+          dir="rtl"
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: "1px solid #3d241f",
+            background: "#1a1210",
+            color: "#f0e6d2",
+            fontSize: 14,
+          }}
+        />
+      </div>
+
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="ابدأ الكتابة هنا..."
+        dir="auto"
+        style={{
+          flex: 1,
+          margin: "10px 18px 24px",
+          padding: "16px 4px",
+          border: "none",
+          borderTop: "1px solid #241715",
+          background: "transparent",
+          color: "#ece1c9",
+          fontSize: 17,
+          lineHeight: 2,
+          fontFamily: "Georgia, 'Traditional Arabic', 'Noto Naskh Arabic', serif",
+          resize: "none",
+          outline: "none",
+          minHeight: "55vh",
+        }}
+      />
+
+      <div
+        style={{
+          position: "fixed",
+          bottom: savedFlash ? 20 : -40,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#271815",
+          border: "1px solid #d4af37",
+          color: "#d4af37",
+          fontSize: 12.5,
+          padding: "8px 16px",
+          borderRadius: 20,
+          transition: "bottom 0.25s ease",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <Check size={13} /> تم الحفظ
+      </div>
+    </div>
+  );
+}
+
+/* ======================== بطاقة الفصل السابق/التالي (فاصل بين الفصول) ======================== */
+function ChapterTransitionCard({ prevChapter, nextChapter }) {
+  return (
+    <div
+      style={{
+        margin: "36px 18px",
+        padding: "18px 16px",
+        borderRadius: 14,
+        background: "#1a1210",
+        border: "1px solid #241715",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, #3d241f)" }} />
+        <OrnamentBead size={11} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, #3d241f, transparent)" }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, textAlign: "center" }}>
+        <span style={{ fontSize: 12, color: "#a8815a" }}>
+          الفصل السابق: <span style={{ color: "#cbb896" }}>{chapterLabel(prevChapter)}</span>
+        </span>
+        <span style={{ fontSize: 12, color: "#a8815a" }}>
+          الفصل التالي: <span style={{ color: "#d4af37", fontWeight: 700 }}>{chapterLabel(nextChapter)}</span>
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, #3d241f)" }} />
+        <OrnamentBead size={11} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, #3d241f, transparent)" }} />
+      </div>
+    </div>
+  );
+}
+
+/* ======================== صفحة القراءة (تمرير متواصل بين الفصول) ======================== */
+function ReaderView({ novel, chapters, initialChapterId, initialOffset, onBack, onEditChapter, onSaveProgress }) {
+  const sorted = useMemo(() => [...chapters].sort((a, b) => a.number - b.number), [chapters]);
+  const chapterRefs = useRef({});
+  const [currentChapterId, setCurrentChapterId] = useState(
+    initialChapterId && sorted.some((c) => c.id === initialChapterId) ? initialChapterId : sorted[0]?.id || null
+  );
+
+  const sortedRef = useRef(sorted);
+  sortedRef.current = sorted;
+  const onSaveProgressRef = useRef(onSaveProgress);
+  onSaveProgressRef.current = onSaveProgress;
+  const currentInfoRef = useRef({ chapterId: currentChapterId, offset: initialOffset || 0 });
+  const didInitialScroll = useRef(false);
+
+  /* التمرير التلقائي إلى موضع القراءة المحفوظ عند فتح الصفحة */
+  useEffect(() => {
+    if (didInitialScroll.current) return;
+    if (!sorted.length) return;
+    const targetId = initialChapterId && sorted.some((c) => c.id === initialChapterId) ? initialChapterId : sorted[0].id;
+    let raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        const node = chapterRefs.current[targetId];
+        if (node) {
+          const top = node.offsetTop + (initialOffset || 0);
+          window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        }
+        didInitialScroll.current = true;
+      });
+      raf1 = raf2;
+    });
+    return () => cancelAnimationFrame(raf1);
+  }, [sorted, initialChapterId, initialOffset]);
+
+  function computeCurrentChapter() {
+    const list = sortedRef.current;
+    let found = list[0] || null;
+    for (const c of list) {
+      const node = chapterRefs.current[c.id];
+      if (!node) continue;
+      if (node.offsetTop <= window.scrollY + 96) {
+        found = c;
+      } else {
+        break;
+      }
+    }
+    return found;
+  }
+
+  function persistNow() {
+    const info = currentInfoRef.current;
+    if (!info.chapterId) return;
+    const chapObj = sortedRef.current.find((c) => c.id === info.chapterId);
+    if (!chapObj) return;
+    onSaveProgressRef.current({
+      chapterId: chapObj.id,
+      chapterNumber: chapObj.number,
+      chapterTitle: chapObj.title || "",
+      scrollOffset: info.offset,
+      updatedAt: Date.now(),
+    });
+  }
+
+  /* حفظ موضع القراءة أثناء التمرير، وليس فقط عند الخروج */
+  useEffect(() => {
+    let saveTimer = null;
+    function handleScroll() {
+      if (!didInitialScroll.current) return;
+      const cur = computeCurrentChapter();
+      if (cur) {
+        const node = chapterRefs.current[cur.id];
+        const offset = node ? Math.max(0, Math.round(window.scrollY - node.offsetTop)) : 0;
+        currentInfoRef.current = { chapterId: cur.id, offset };
+        setCurrentChapterId((prev) => (prev === cur.id ? prev : cur.id));
+      }
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(persistNow, 700);
+    }
+    function handleVisibility() {
+      if (document.visibilityState === "hidden") persistNow();
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", persistNow);
+    const interval = setInterval(persistNow, 4000);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", persistNow);
+      if (saveTimer) clearTimeout(saveTimer);
+      clearInterval(interval);
+      persistNow();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const currentChapter = sorted.find((c) => c.id === currentChapterId) || sorted[0];
+
+  return (
+    <div style={{ minHeight: "100vh", paddingBottom: 60 }}>
+      <TopBar
+        title={novel.title}
+        subtitle={currentChapter ? chapterLabel(currentChapter) : ""}
+        onBack={onBack}
+        actions={
+          currentChapter ? (
+            <button
+              onClick={() => onEditChapter(currentChapter.id)}
+              aria-label="تعديل هذا الفصل"
+              style={{ background: "transparent", border: "none", color: "#d4af37", cursor: "pointer", padding: 4 }}
+            >
+              <Pencil size={18} />
+            </button>
+          ) : null
+        }
+      />
+
+      {sorted.length === 0 ? (
+        <p style={{ color: "#7a4a39", fontSize: 14, marginTop: 60, textAlign: "center" }}>
+          لا توجد فصول بعد
+        </p>
+      ) : (
+        sorted.map((c, idx) => (
+          <Fragment key={c.id}>
+            <div ref={(el) => { chapterRefs.current[c.id] = el; }}>
+              <div
+                style={{
+                  margin: "34px 20px 18px",
+                  paddingBottom: 14,
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, #4a2e21)" }} />
+                  <OrnamentBead size={13} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, #4a2e21, transparent)" }} />
+                </div>
+                <span style={{ fontSize: 14, color: "#d4af37", fontWeight: 700, letterSpacing: 0.5 }}>
+                  「{chapterLabel(c)}」
+                </span>
+              </div>
+              <div
+                dir="auto"
+                style={{
+                  padding: "4px 20px 10px",
+                  color: "#ece1c9",
+                  fontSize: 17,
+                  lineHeight: 2.1,
+                  fontFamily: "Georgia, 'Traditional Arabic', 'Noto Naskh Arabic', serif",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {c.content && c.content.trim() ? c.content : (
+                  <span style={{ color: "#7a4a39", fontStyle: "italic" }}>لا يوجد محتوى بعد لهذا الفصل</span>
+                )}
+              </div>
+            </div>
+            {idx < sorted.length - 1 && (
+              <ChapterTransitionCard prevChapter={c} nextChapter={sorted[idx + 1]} />
+            )}
+          </Fragment>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* ======================== السجل (تبويب رئيسي) ======================== */
+function HistoryView({ entries, loadingMore, onOpenDetail, onContinueReading }) {
+  const lastTapRef = useRef({});
+  const pendingTimerRef = useRef({});
+
+  useEffect(() => {
+    return () => {
+      Object.values(pendingTimerRef.current).forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
+  function handleTap(entry) {
+    const key = entry.novelId;
+    const now = Date.now();
+    const last = lastTapRef.current[key] || 0;
+    if (now - last < 320) {
+      lastTapRef.current[key] = 0;
+      if (pendingTimerRef.current[key]) {
+        clearTimeout(pendingTimerRef.current[key]);
+        delete pendingTimerRef.current[key];
+      }
+      onContinueReading(entry);
+    } else {
+      lastTapRef.current[key] = now;
+      pendingTimerRef.current[key] = setTimeout(() => {
+        if (lastTapRef.current[key] === now) {
+          onOpenDetail(entry);
+        }
+      }, 330);
+    }
+  }
+
+  return (
+    <div>
+      <TopBar title="السجل" />
+      <div style={{ padding: "8px 16px 130px" }}>
+        {entries.length === 0 ? (
+          <div style={{ textAlign: "center", marginTop: "22vh", color: "#a8815a" }}>
+            <Clock size={40} style={{ opacity: 0.5, marginBottom: 14 }} />
+            <p style={{ fontSize: 15, margin: 0 }}>
+              {loadingMore ? "جارٍ التحميل..." : "لا يوجد سجل قراءة بعد"}
+            </p>
+            {!loadingMore && (
+              <p style={{ fontSize: 13, margin: "6px 0 0", color: "#7a4a39" }}>
+                ابدأ بقراءة فصل من مكتبتك ليظهر هنا
+              </p>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+            {entries.map((entry) => (
+              <button
+                key={entry.novelId}
+                onClick={() => handleTap(entry)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  background: "#1a1210",
+                  border: "1px solid #241715",
+                  borderRadius: 12,
+                  padding: 12,
+                  cursor: "pointer",
+                  textAlign: "right",
+                }}
+              >
+                <div
+                  style={{
+                    width: 52,
+                    height: 74,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    background: "#221513",
+                    border: "1px solid #2c1c17",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {entry.novel.cover ? (
+                    <img src={entry.novel.cover} alt={entry.novel.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <ImageIcon size={20} color="#5c3a2d" />
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      color: "#f0e6d2",
+                      fontSize: 14.5,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {entry.novel.title}
+                  </div>
+                  <div style={{ color: "#a8815a", fontSize: 12.5, marginTop: 4 }}>
+                    {chapterLabel({ number: entry.progress.chapterNumber, title: entry.progress.chapterTitle })}
+                  </div>
+                  <div style={{ color: "#7a4a39", fontSize: 11.5, marginTop: 3 }}>
+                    {formatRelativeAr(entry.progress.updatedAt)}
+                  </div>
+                </div>
+              </button>
+            ))}
+            <p style={{ textAlign: "center", color: "#7a4a39", fontSize: 11.5, marginTop: 4 }}>
+              ضغطة واحدة لعرض التفاصيل، وضغطتان متتاليتان للمتابعة مباشرة
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ======================== تفاصيل آخر قراءة ======================== */
+function HistoryDetailView({ novel, progress, onBack, onContinueReading, onOpenNovel }) {
+  return (
+    <div>
+      <TopBar title="تفاصيل القراءة" onBack={onBack} />
+      <div style={{ padding: "24px 20px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div
+          style={{
+            width: 140,
+            aspectRatio: "3/4.3",
+            borderRadius: 12,
+            overflow: "hidden",
+            background: "#221513",
+            border: "1px solid #2c1c17",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
+            position: "relative",
+          }}
+        >
+          {novel.cover ? (
+            <img src={novel.cover} alt={novel.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <ImageIcon size={26} color="#5c3a2d" />
+          )}
+          <CornerOrnament size={20} color="#d4af37" style={{ position: "absolute", top: 5, left: 5, opacity: 0.6, pointerEvents: "none" }} />
+          <CornerOrnament size={20} color="#d4af37" style={{ position: "absolute", bottom: 5, right: 5, opacity: 0.6, pointerEvents: "none", transform: "rotate(180deg)" }} />
+        </div>
+
+        <h2 style={{ margin: "18px 0 4px", fontSize: 18, color: "#f0e6d2", textAlign: "center" }}>{novel.title}</h2>
+        <p style={{ margin: 0, fontSize: 14, color: "#d4af37", fontWeight: 600, textAlign: "center" }}>
+          {chapterLabel({ number: progress.chapterNumber, title: progress.chapterTitle })}
+        </p>
+        <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "#a8815a" }}>
+          آخر قراءة: {formatRelativeAr(progress.updatedAt)}
+        </p>
+
+        <button
+          onClick={onContinueReading}
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginTop: 26,
+            padding: "13px 0",
+            borderRadius: 10,
+            border: "none",
+            background: "#d4af37",
+            color: "#130d0c",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          <BookOpen size={16} />
+          متابعة القراءة
+        </button>
+
+        <button
+          onClick={onOpenNovel}
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginTop: 10,
+            padding: "12px 0",
+            borderRadius: 10,
+            border: "1px solid #4a3524",
+            background: "transparent",
+            color: "#cbb896",
+            fontSize: 14,
+            cursor: "pointer",
+          }}
+        >
+          عرض كل الفصول
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ======================== الإعدادات (تبويب رئيسي) ======================== */
+function SettingsView({ onExport, onImportFile, onClearAll, novelsCount, translateConfig, onSaveTranslateConfig }) {
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [flash, setFlash] = useState(null);
+  const fileRef = useRef(null);
+  const [backendUrl, setBackendUrl] = useState(translateConfig?.backendUrl || "");
+  const [clientToken, setClientToken] = useState(translateConfig?.clientToken || "");
+
+  async function handleSaveTranslateConfig() {
+    await onSaveTranslateConfig({ backendUrl: backendUrl.trim(), clientToken: clientToken.trim() });
+    setFlash({ ok: true, text: "تم حفظ إعدادات الترجمة" });
+    setTimeout(() => setFlash(null), 2200);
+  }
+
+  async function handleExportClick() {
+    try {
+      await onExport();
+      setFlash({ ok: true, text: "تم تنزيل النسخة الاحتياطية" });
+    } catch {
+      setFlash({ ok: false, text: "تعذّر تصدير النسخة الاحتياطية" });
+    }
+    setTimeout(() => setFlash(null), 2200);
+  }
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const ok = await onImportFile(file);
+    setFlash(ok ? { ok: true, text: "تم استيراد النسخة الاحتياطية بنجاح" } : { ok: false, text: "الملف غير صالح" });
+    setTimeout(() => setFlash(null), 2200);
+  }
+
+  const rowStyle = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    width: "100%",
+    background: "#1a1210",
+    border: "1px solid #241715",
+    borderRadius: 12,
+    padding: "15px 16px",
+    cursor: "pointer",
+    textAlign: "right",
+    color: "#f0e6d2",
+    fontSize: 14.5,
+  };
+
+  return (
+    <div>
+      <TopBar title="الإعدادات" />
+      <div style={{ padding: "16px 16px 130px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <p style={{ color: "#a8815a", fontSize: 12.5, margin: "4px 4px 2px" }}>البيانات</p>
+
+        <button onClick={handleExportClick} style={rowStyle}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Download size={17} color="#d4af37" />
+            تصدير نسخة احتياطية
+          </span>
+        </button>
+
+        <button onClick={() => fileRef.current?.click()} style={rowStyle}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Upload size={17} color="#d4af37" />
+            استيراد نسخة احتياطية
+          </span>
+        </button>
+        <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleFileChange} style={{ display: "none" }} />
+
+        <button
+          onClick={() => setConfirmClear(true)}
+          style={{ ...rowStyle, borderColor: "#4a2420", color: "#e2776a" }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Trash2 size={17} color="#e2776a" />
+            حذف جميع البيانات
+          </span>
+        </button>
+
+        <p style={{ color: "#a8815a", fontSize: 12.5, margin: "18px 4px 2px" }}>الترجمة</p>
+        <div style={{ background: "#1a1210", border: "1px solid #241715", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={{ color: "#a8815a", fontSize: 12, marginBottom: 5, display: "block" }}>رابط خادم الترجمة (Backend URL)</label>
+            <input
+              value={backendUrl}
+              onChange={(e) => setBackendUrl(e.target.value)}
+              placeholder="https://your-worker.workers.dev"
+              dir="ltr"
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: 8,
+                border: "1px solid #3d241f",
+                background: "#130d0c",
+                color: "#f0e6d2",
+                fontSize: 13.5,
+                outline: "none",
+                textAlign: "left",
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ color: "#a8815a", fontSize: 12, marginBottom: 5, display: "block" }}>رمز وصول العميل (اختياري)</label>
+            <input
+              value={clientToken}
+              onChange={(e) => setClientToken(e.target.value)}
+              placeholder="X-Client-Token"
+              dir="ltr"
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: 8,
+                border: "1px solid #3d241f",
+                background: "#130d0c",
+                color: "#f0e6d2",
+                fontSize: 13.5,
+                outline: "none",
+                textAlign: "left",
+              }}
+            />
+          </div>
+          <p style={{ margin: 0, color: "#7a4a39", fontSize: 11.5, lineHeight: 1.6 }}>
+            هذا الرابط يشير إلى خادمك الآمن الذي يحمل مفتاح الـAPI — لا يوضع مفتاح الـAPI هنا مطلقًا.
+          </p>
+          <button
+            onClick={handleSaveTranslateConfig}
+            style={{
+              alignSelf: "flex-start",
+              padding: "9px 18px",
+              borderRadius: 8,
+              border: "none",
+              background: "#d4af37",
+              color: "#130d0c",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            حفظ
+          </button>
+        </div>
+
+        <p style={{ color: "#a8815a", fontSize: 12.5, margin: "18px 4px 2px" }}>عن التطبيق</p>
+        <div style={{ ...rowStyle, cursor: "default" }}>
+          <span>عدد الروايات المحفوظة</span>
+          <span style={{ color: "#d4af37", fontWeight: 700 }}>{novelsCount}</span>
+        </div>
+        <div style={{ ...rowStyle, cursor: "default" }}>
+          <span>مكتبتي</span>
+          <span style={{ color: "#7a4a39" }}>الإصدار 1.1</span>
+        </div>
+      </div>
+
+      {flash && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "calc(90px + env(safe-area-inset-bottom, 0px))",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#271815",
+            border: `1px solid ${flash.ok ? "#d4af37" : "#7a2420"}`,
+            color: flash.ok ? "#d4af37" : "#e2776a",
+            fontSize: 12.5,
+            padding: "8px 16px",
+            borderRadius: 20,
+            zIndex: 45,
+          }}
+        >
+          {flash.text}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmClear}
+        title="سيتم حذف جميع الروايات والفصول وسجل القراءة نهائيًا. هل أنت متأكد؟"
+        confirmLabel="حذف الكل"
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          onClearAll();
+        }}
+      />
+    </div>
+  );
+}
+
+/* ======================== الترجمة: عناصر مساعدة للعرض ======================== */
+function jobStatusLabel(job) {
+  if (!job) return "";
+  if (job.status === "done") return `اكتملت — ${job.totalChapters || 0} فصل`;
+  if (job.status === "paused") return "متوقفة — بانتظار المتابعة";
+  if (job.status === "error") return job.lastError || "حدث خطأ";
+  if (job.status === "extracting") return "جارٍ استخراج النص من الملف...";
+  return `جارٍ الترجمة — الفصل ${(job.currentChapterIndex || 0) + 1} من ${job.totalChapters || "؟"}`;
+}
+function statusIconFor(status) {
+  if (status === "done") return <Check size={17} color="#d4af37" />;
+  if (status === "paused" || status === "error") return <AlertTriangle size={16} color="#e2776a" />;
+  return <Globe size={16} color="#a8815a" />;
+}
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return "";
+  if (bytes < 1024) return `${bytes} بايت`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} كيلوبايت`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ميغابايت`;
+}
+const smallBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px 12px",
+  borderRadius: 8,
+  border: "1px solid #3d241f",
+  background: "#1f1512",
+  color: "#cbb896",
+  fontSize: 12.5,
+  cursor: "pointer",
+};
+
+/* ======================== الترجمة: قائمة الترجمات (تبويب رئيسي) ======================== */
+function TranslateHubView({ jobs, onOpenJob, onNewJob, onDeleteJob, backendConfigured }) {
+  const [confirmId, setConfirmId] = useState(null);
+  return (
+    <div>
+      <TopBar title="الترجمة" />
+      <div style={{ padding: "8px 16px 150px" }}>
+        {!backendConfigured && (
+          <div
+            style={{
+              background: "#241715",
+              border: "1px solid #4a2420",
+              borderRadius: 12,
+              padding: "12px 14px",
+              marginBottom: 14,
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+            }}
+          >
+            <AlertTriangle size={18} color="#e2a03f" style={{ flexShrink: 0, marginTop: 2 }} />
+            <p style={{ margin: 0, color: "#e0c9a6", fontSize: 13, lineHeight: 1.6 }}>
+              لم يتم إعداد رابط خادم الترجمة بعد. أضفه من الإعدادات قبل بدء أي ترجمة جديدة.
+            </p>
+          </div>
+        )}
+
+        <button
+          onClick={onNewJob}
+          style={{
+            width: "100%",
+            padding: "14px 0",
+            borderRadius: 12,
+            border: "1.5px dashed #4a3524",
+            background: "#1f1512",
+            color: "#d4af37",
+            fontSize: 14.5,
+            fontWeight: 700,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            cursor: "pointer",
+            marginBottom: 16,
+          }}
+        >
+          <Plus size={18} /> ترجمة رواية جديدة
+        </button>
+
+        {jobs.length === 0 ? (
+          <div style={{ textAlign: "center", marginTop: "12vh", color: "#a8815a", fontSize: 13.5 }}>
+            لا توجد ترجمات بعد
+          </div>
+        ) : (
+          jobs.map((job) => (
+            <div
+              key={job.id}
+              onClick={() => onOpenJob(job.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                background: "#1a1210",
+                border: "1px solid #241715",
+                borderRadius: 12,
+                padding: "13px 14px",
+                marginBottom: 10,
+                cursor: "pointer",
+              }}
+            >
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: "#241715",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {statusIconFor(job.status)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#f0e6d2",
+                    fontSize: 14.5,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {job.novelTitle}
+                </p>
+                <p style={{ margin: "3px 0 0", color: "#a8815a", fontSize: 12 }}>{jobStatusLabel(job)}</p>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmId(job.id);
+                }}
+                style={{ background: "transparent", border: "none", color: "#7a4a39", padding: 6, cursor: "pointer" }}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="سيتم حذف هذه الترجمة نهائيًا. هل أنت متأكد؟"
+        confirmLabel="حذف"
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => {
+          onDeleteJob(confirmId);
+          setConfirmId(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ======================== الترجمة: نموذج ترجمة رواية جديدة ======================== */
+function NewTranslationView({ onBack, onCreate, backendConfigured }) {
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const fileRef = useRef(null);
+
+  function handleFile(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      setFileError("الرجاء اختيار ملف PDF فقط");
+      return;
+    }
+    setFileError("");
+    setFile(f);
+  }
+
+  async function handleStart() {
+    if (!title.trim() || !file || busy || !backendConfigured) return;
+    setBusy(true);
+    await onCreate({ title: title.trim(), file });
+    setBusy(false);
+  }
+
+  const canStart = !!(title.trim() && file && backendConfigured);
+
+  return (
+    <div>
+      <TopBar title="ترجمة رواية جديدة" onBack={onBack} />
+      <div style={{ padding: "20px 20px 60px" }}>
+        {!backendConfigured && (
+          <div
+            style={{
+              background: "#241715",
+              border: "1px solid #4a2420",
+              borderRadius: 12,
+              padding: "11px 13px",
+              marginBottom: 18,
+              color: "#e0c9a6",
+              fontSize: 12.5,
+              lineHeight: 1.6,
+            }}
+          >
+            أضف رابط خادم الترجمة من الإعدادات أولًا.
+          </div>
+        )}
+
+        <label style={{ color: "#a8815a", fontSize: 12.5, marginBottom: 6, display: "block" }}>اسم الرواية</label>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="مثال: أسطورة سيد الظل"
+          dir="rtl"
+          style={{
+            width: "100%",
+            padding: "13px 14px",
+            borderRadius: 10,
+            border: "1px solid #3d241f",
+            background: "#1a1210",
+            color: "#f0e6d2",
+            fontSize: 15,
+            outline: "none",
+            marginBottom: 18,
+          }}
+        />
+
+        <label style={{ color: "#a8815a", fontSize: 12.5, marginBottom: 6, display: "block" }}>ملف الرواية (PDF)</label>
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{
+            width: "100%",
+            padding: "18px 14px",
+            borderRadius: 12,
+            border: "1.5px dashed #4a3524",
+            background: "#1f1512",
+            color: "#a8815a",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            textAlign: "right",
+          }}
+        >
+          <FileText size={22} color={file ? "#d4af37" : "#a8815a"} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {file ? (
+              <>
+                <span
+                  style={{
+                    display: "block",
+                    color: "#f0e6d2",
+                    fontSize: 13.5,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {file.name}
+                </span>
+                <span style={{ display: "block", fontSize: 11.5, marginTop: 2 }}>{formatFileSize(file.size)}</span>
+              </>
+            ) : (
+              <span style={{ fontSize: 13.5 }}>اضغط لاختيار ملف PDF</span>
+            )}
+          </span>
+        </button>
+        <input ref={fileRef} type="file" accept="application/pdf,.pdf" onChange={handleFile} style={{ display: "none" }} />
+        {fileError && <p style={{ color: "#e2776a", fontSize: 12, margin: "8px 2px 0" }}>{fileError}</p>}
+
+        <button
+          onClick={handleStart}
+          disabled={!canStart || busy}
+          style={{
+            width: "100%",
+            marginTop: 26,
+            padding: "14px 0",
+            borderRadius: 10,
+            border: "none",
+            background: canStart ? "#d4af37" : "#3d241f",
+            color: canStart ? "#130d0c" : "#a8815a",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: canStart ? "pointer" : "default",
+          }}
+        >
+          {busy ? "جارٍ التجهيز..." : "بدء الترجمة"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ======================== الترجمة: صفحة مهمة ترجمة (تقدّم + فصول) ======================== */
+function TranslationJobView({ job, onBack, onResume, onAddToLibrary, onSaveChapterEdit }) {
+  const [openChapter, setOpenChapter] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [copiedId, setCopiedId] = useState(null);
+
+  if (!job) return null;
+
+  const chapters = job.chapters || [];
+  const totalCount = job.totalChapters || chapters.length || 0;
+  const isRunning = job.status === "translating" || job.status === "extracting";
+  const currentChapter = chapters[job.currentChapterIndex || 0];
+  const chunkTotal = (currentChapter && currentChapter.chunks && currentChapter.chunks.length) || 0;
+  const chunkDone = (currentChapter && currentChapter.chunkIndex) || 0;
+  const percent = totalCount
+    ? Math.min(100, Math.round((((job.currentChapterIndex || 0) + (chunkTotal ? chunkDone / chunkTotal : 0)) / totalCount) * 100))
+    : 0;
+
+  function handleCopy(text, id) {
+    if (!navigator.clipboard) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+      })
+      .catch(() => {});
+  }
+
+  function downloadText(filename, text) {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  function handleExportChapterFile(c, text) {
+    downloadText(`${job.novelTitle}-الفصل-${c.index + 1}.txt`, `${c.translatedTitle || c.sourceTitle || ""}\n\n${text}`);
+  }
+
+  function handleExportAllFile() {
+    const text = chapters
+      .map((c) => `${c.translatedTitle || c.sourceTitle || `الفصل ${c.index + 1}`}\n\n${c.translatedText || ""}`)
+      .join("\n\n---\n\n");
+    downloadText(`${job.novelTitle}.txt`, text);
+  }
+
+  return (
+    <div>
+      <TopBar title={job.novelTitle} subtitle={jobStatusLabel(job)} onBack={onBack} />
+      <div style={{ padding: "16px 16px 150px" }}>
+        {isRunning && (
+          <div style={{ background: "#1a1210", border: "1px solid #241715", borderRadius: 12, padding: "16px 16px", marginBottom: 16 }}>
+            <p style={{ margin: "0 0 10px", color: "#f0e6d2", fontSize: 13.5 }}>
+              {job.status === "extracting"
+                ? "جارٍ استخراج نص الملف..."
+                : `جاري ترجمة الفصل ${(job.currentChapterIndex || 0) + 1} من ${totalCount}...`}
+            </p>
+            <div style={{ height: 8, borderRadius: 6, background: "#241715", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${percent}%`, background: "#d4af37", transition: "width .3s" }} />
+            </div>
+            <p style={{ margin: "8px 0 0", color: "#a8815a", fontSize: 12, textAlign: "left" }}>{percent}%</p>
+          </div>
+        )}
+
+        {(job.status === "paused" || job.status === "error") && (
+          <div style={{ background: "#241715", border: "1px solid #4a2420", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+            <p style={{ margin: "0 0 4px", color: "#e2776a", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+              <AlertTriangle size={15} /> توقفت الترجمة
+            </p>
+            {job.lastError && <p style={{ margin: "0 0 10px", color: "#a8815a", fontSize: 12 }}>{job.lastError}</p>}
+            <button
+              onClick={onResume}
+              style={{
+                width: "100%",
+                padding: "11px 0",
+                borderRadius: 10,
+                border: "none",
+                background: "#d4af37",
+                color: "#130d0c",
+                fontSize: 14,
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                cursor: "pointer",
+              }}
+            >
+              <RefreshCw size={15} /> متابعة الترجمة
+            </button>
+          </div>
+        )}
+
+        {job.status === "done" && (
+          <button
+            onClick={onAddToLibrary}
+            disabled={!!job.addedToLibraryNovelId}
+            style={{
+              width: "100%",
+              padding: "13px 0",
+              borderRadius: 10,
+              border: "none",
+              marginBottom: 12,
+              background: job.addedToLibraryNovelId ? "#3d241f" : "#d4af37",
+              color: job.addedToLibraryNovelId ? "#a8815a" : "#130d0c",
+              fontSize: 14.5,
+              fontWeight: 700,
+              cursor: job.addedToLibraryNovelId ? "default" : "pointer",
+            }}
+          >
+            {job.addedToLibraryNovelId ? "أُضيفت إلى مكتبتي" : "إضافة إلى مكتبتي"}
+          </button>
+        )}
+
+        {chapters.some((c) => c.status === "done") && (
+          <button
+            onClick={handleExportAllFile}
+            style={{
+              width: "100%",
+              padding: "11px 0",
+              borderRadius: 10,
+              border: "1px solid #3d241f",
+              background: "transparent",
+              color: "#cbb896",
+              fontSize: 13,
+              marginBottom: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              cursor: "pointer",
+            }}
+          >
+            <Download size={15} /> تصدير كل الفصول
+          </button>
+        )}
+
+        {chapters.map((c) => {
+          const isOpen = openChapter === c.index;
+          const draft = drafts[c.index] !== undefined ? drafts[c.index] : c.translatedText || "";
+          const label =
+            c.translatedTitle || c.sourceTitle ? `الفصل ${c.index + 1} — ${c.translatedTitle || c.sourceTitle}` : `الفصل ${c.index + 1}`;
+          return (
+            <div key={c.index} style={{ background: "#1a1210", border: "1px solid #241715", borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
+              <button
+                onClick={() => c.status === "done" && setOpenChapter(isOpen ? null : c.index)}
+                style={{
+                  width: "100%",
+                  padding: "13px 14px",
+                  background: "transparent",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  cursor: c.status === "done" ? "pointer" : "default",
+                  textAlign: "right",
+                }}
+              >
+                <span style={{ flex: 1, color: "#f0e6d2", fontSize: 13.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {label}
+                </span>
+                {c.status === "done" ? (
+                  <ChevronDown size={16} color="#a8815a" style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                ) : c.status === "translating" ? (
+                  <span style={{ color: "#a8815a", fontSize: 11.5 }}>جارٍ الترجمة...</span>
+                ) : (
+                  <span style={{ color: "#7a4a39", fontSize: 11.5 }}>بالانتظار</span>
+                )}
+              </button>
+
+              {isOpen && (
+                <div style={{ padding: "0 14px 14px" }}>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDrafts((prev) => ({ ...prev, [c.index]: e.target.value }))}
+                    dir="rtl"
+                    style={{
+                      width: "100%",
+                      minHeight: 180,
+                      padding: "11px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #3d241f",
+                      background: "#130d0c",
+                      color: "#f0e6d2",
+                      fontSize: 14,
+                      lineHeight: 1.9,
+                      outline: "none",
+                      resize: "vertical",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                    <button onClick={() => handleCopy(draft, c.index)} style={smallBtnStyle}>
+                      <Copy size={14} /> {copiedId === c.index ? "تم النسخ" : "نسخ"}
+                    </button>
+                    <button onClick={() => onSaveChapterEdit(c.index, draft)} style={smallBtnStyle}>
+                      <Check size={14} /> حفظ
+                    </button>
+                    <button onClick={() => handleExportChapterFile(c, draft)} style={smallBtnStyle}>
+                      <Download size={14} /> تصدير
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ======================== التطبيق الرئيسي ======================== */
+function App() {
+  const [loading, setLoading] = useState(true);
+  const [novels, setNovels] = useState([]);
+  const [chaptersCache, setChaptersCache] = useState({});
+  const [novelProgress, setNovelProgress] = useState({});
+  const [historyOrder, setHistoryOrder] = useState([]);
+  const [view, setView] = useState("library");
+  const [currentNovelId, setCurrentNovelId] = useState(null);
+  const [currentChapterId, setCurrentChapterId] = useState(null);
+  const [readerTarget, setReaderTarget] = useState({ chapterId: null, offset: 0 });
+  const [editorReturnView, setEditorReturnView] = useState("novel");
+  const [translateConfig, setTranslateConfig] = useState({ backendUrl: "", clientToken: "" });
+  const [translateJobsIndex, setTranslateJobsIndex] = useState([]);
+  const [activeJob, setActiveJob] = useState(null);
+  const [currentTranslateJobId, setCurrentTranslateJobId] = useState(null);
+  const runningJobIdRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      const [n, order, tCfg, tJobs] = await Promise.all([
+        loadNovels(),
+        loadHistoryOrder(),
+        loadTranslateConfig(),
+        loadTranslateJobsIndex(),
+      ]);
+      setNovels(n);
+      setHistoryOrder(order.filter((id) => n.some((nv) => nv.id === id)));
+      setTranslateConfig(tCfg);
+      setTranslateJobsIndex(tJobs);
+      setLoading(false);
+    })();
+  }, []);
+
+  /* حماية من الانتقال لصفحات تعتمد على بيانات محذوفة (رواية/فصل حُذف من مكان آخر) */
+  useEffect(() => {
+    if (loading) return;
+    const novelDependentViews = ["novel", "reader", "addChapter", "editChapter", "historyDetail"];
+    if (novelDependentViews.includes(view) && currentNovelId && !novels.some((n) => n.id === currentNovelId)) {
+      setView("library");
+    }
+    if (view === "translateJob" && !activeJob) {
+      setView("translate");
+    }
+  }, [loading, view, novels, currentNovelId, activeJob]);
+
+  async function openNovel(id) {
+    setCurrentNovelId(id);
+    const tasks = [];
+    if (!chaptersCache[id]) {
+      tasks.push(loadChapters(id).then((ch) => setChaptersCache((prev) => ({ ...prev, [id]: ch }))));
+    }
+    if (!(id in novelProgress)) {
+      tasks.push(loadProgress(id).then((p) => setNovelProgress((prev) => ({ ...prev, [id]: p }))));
+    }
+    if (tasks.length) await Promise.all(tasks);
+    setView("novel");
+  }
+
+  async function openReaderFor(novelId, chapterId, offset) {
+    setCurrentNovelId(novelId);
+    if (!chaptersCache[novelId]) {
+      const ch = await loadChapters(novelId);
+      setChaptersCache((prev) => ({ ...prev, [novelId]: ch }));
+    }
+    setReaderTarget({ chapterId: chapterId || null, offset: offset || 0 });
+    setView("reader");
+  }
+
+  async function handleAddNovel({ title, cover }) {
+    const novel = { id: uid(), title, cover, createdAt: Date.now() };
+    const updated = [novel, ...novels];
+    setNovels(updated);
+    await saveNovels(updated);
+    setView("library");
+  }
+
+  async function handleDeleteNovel(id) {
+    const updated = novels.filter((n) => n.id !== id);
+    setNovels(updated);
+    await saveNovels(updated);
+    await deleteChaptersKey(id);
+    await deleteProgressKey(id);
+    setChaptersCache((prev) => {
+      const c = { ...prev };
+      delete c[id];
+      return c;
+    });
+    setNovelProgress((prev) => {
+      const c = { ...prev };
+      delete c[id];
+      return c;
+    });
+    setHistoryOrder((prev) => {
+      const next = prev.filter((x) => x !== id);
+      saveHistoryOrder(next);
+      return next;
+    });
+  }
+
+  async function handleAddChapter({ number, title, content }) {
+    const list = chaptersCache[currentNovelId] || [];
+    const chapter = { id: uid(), number, title, content, updatedAt: Date.now() };
+    const updated = [...list, chapter];
+    setChaptersCache((prev) => ({ ...prev, [currentNovelId]: updated }));
+    await saveChapters(currentNovelId, updated);
+    setView("novel");
+  }
+
+  async function handleUpdateChapter(chapterId, { number, title, content }) {
+    const list = chaptersCache[currentNovelId] || [];
+    const updated = list.map((c) =>
+      c.id === chapterId ? { ...c, number, title, content, updatedAt: Date.now() } : c
+    );
+    setChaptersCache((prev) => ({ ...prev, [currentNovelId]: updated }));
+    await saveChapters(currentNovelId, updated);
+  }
+
+  async function handleDeleteChapter(chapterId) {
+    const list = chaptersCache[currentNovelId] || [];
+    const updated = list.filter((c) => c.id !== chapterId);
+    setChaptersCache((prev) => ({ ...prev, [currentNovelId]: updated }));
+    await saveChapters(currentNovelId, updated);
+  }
+
+  async function handleSaveProgress(novelId, progressObj) {
+    setNovelProgress((prev) => ({ ...prev, [novelId]: progressObj }));
+    await saveProgressStorage(novelId, progressObj);
+    setHistoryOrder((prev) => {
+      const next = [novelId, ...prev.filter((id) => id !== novelId)].slice(0, 60);
+      saveHistoryOrder(next);
+      return next;
+    });
+  }
+
+  async function refreshHistory() {
+    const missing = historyOrder.filter((id) => !(id in novelProgress) && novels.some((n) => n.id === id));
+    if (!missing.length) return;
+    const entries = await Promise.all(missing.map(async (id) => [id, await loadProgress(id)]));
+    setNovelProgress((prev) => {
+      const next = { ...prev };
+      entries.forEach(([id, p]) => {
+        next[id] = p;
+      });
+      return next;
+    });
+  }
+
+  function handleTabChange(tab) {
+    if (tab === "history") refreshHistory();
+    setCurrentChapterId(null);
+    setView(tab);
+  }
+
+  function backFromEditor() {
+    if (editorReturnView === "reader" && currentChapterId) {
+      setReaderTarget({ chapterId: currentChapterId, offset: 0 });
+    }
+    setView(editorReturnView);
+  }
+
+  async function handleExportBackup() {
+    const data = { novels, chaptersByNovel: {}, progressByNovel: {}, historyOrder, exportedAt: Date.now() };
+    for (const n of novels) {
+      data.chaptersByNovel[n.id] = chaptersCache[n.id] || (await loadChapters(n.id));
+      data.progressByNovel[n.id] = novelProgress[n.id] !== undefined ? novelProgress[n.id] : await loadProgress(n.id);
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `مكتبتي-نسخة-احتياطية-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  async function handleImportBackup(file) {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data || !Array.isArray(data.novels)) throw new Error("invalid backup");
+
+      await saveNovels(data.novels);
+      setNovels(data.novels);
+
+      const newChaptersCache = {};
+      for (const n of data.novels) {
+        const chs = (data.chaptersByNovel && data.chaptersByNovel[n.id]) || [];
+        await saveChapters(n.id, chs);
+        newChaptersCache[n.id] = chs;
+      }
+      setChaptersCache(newChaptersCache);
+
+      const newProgress = {};
+      for (const n of data.novels) {
+        const p = data.progressByNovel && data.progressByNovel[n.id];
+        if (p) {
+          await saveProgressStorage(n.id, p);
+          newProgress[n.id] = p;
+        }
+      }
+      setNovelProgress(newProgress);
+
+      const order = Array.isArray(data.historyOrder)
+        ? data.historyOrder.filter((id) => data.novels.some((n) => n.id === id))
+        : [];
+      await saveHistoryOrder(order);
+      setHistoryOrder(order);
+
+      setCurrentNovelId(null);
+      setView("library");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function handleClearAll() {
+    for (const n of novels) {
+      await deleteChaptersKey(n.id);
+      await deleteProgressKey(n.id);
+    }
+    await saveNovels([]);
+    await saveHistoryOrder([]);
+    setNovels([]);
+    setChaptersCache({});
+    setNovelProgress({});
+    setHistoryOrder([]);
+    setCurrentNovelId(null);
+    setView("library");
+  }
+
+  /* ====================== منطق ميزة «الترجمة» ====================== */
+
+  async function persistJob(jobObj) {
+    const toSave = { ...jobObj };
+    delete toSave._file;
+    await saveTranslateJob(toSave);
+    setTranslateJobsIndex((prev) => {
+      const idx = prev.findIndex((j) => j.id === jobObj.id);
+      const entry = {
+        id: jobObj.id,
+        novelTitle: jobObj.novelTitle,
+        status: jobObj.status,
+        totalChapters: jobObj.totalChapters || (jobObj.chapters ? jobObj.chapters.length : 0),
+        currentChapterIndex: jobObj.currentChapterIndex || 0,
+        lastError: jobObj.lastError || null,
+        addedToLibraryNovelId: jobObj.addedToLibraryNovelId || null,
+        createdAt: jobObj.createdAt,
+        updatedAt: Date.now(),
+      };
+      const nextList = idx === -1 ? [entry, ...prev] : prev.map((j, i) => (i === idx ? entry : j));
+      saveTranslateJobsIndex(nextList);
+      return nextList;
+    });
+  }
+
+  /* محرك الترجمة: يعمل في الخلفية بشكل مستقل عن الشاشة المعروضة حاليًا،
+     ويُستأنف من آخر فصل غير مكتمل عند انقطاع الاتصال أو حدوث خطأ */
+  async function runTranslationJob(initialJob, backendUrl, clientToken) {
+    const jobId = initialJob.id;
+    runningJobIdRef.current = jobId;
+    let job = initialJob;
+
+    async function checkSuperseded() {
+      if (runningJobIdRef.current !== jobId) {
+        if (job.status === "translating" || job.status === "extracting") {
+          job = { ...job, status: "paused" };
+          setActiveJob((prev) => (prev && prev.id === jobId ? job : prev));
+          await persistJob(job);
+        }
+        return true;
+      }
+      return false;
+    }
+
+    try {
+      if (!job.chapters || job.chapters.length === 0) {
+        job = { ...job, status: "extracting" };
+        setActiveJob(job);
+        await persistJob(job);
+
+        const fullText = await extractPdfText(job._file, () => {});
+        const detected = detectChapters(fullText);
+        const chapters = detected.map((c, i) => ({
+          index: i,
+          sourceTitle: c.title || "",
+          translatedTitle: "",
+          sourceText: c.text,
+          translatedText: "",
+          status: "pending",
+          chunkIndex: 0,
+          chunks: chunkText(c.text),
+          glossaryChecked: false,
+        }));
+        job = {
+          ...job,
+          chapters,
+          totalChapters: chapters.length,
+          status: "translating",
+          currentChapterIndex: 0,
+          glossary: job.glossary || {},
+        };
+        delete job._file;
+        setActiveJob(job);
+        await persistJob(job);
+      } else if (job.status !== "translating") {
+        job = { ...job, status: "translating", lastError: null };
+        setActiveJob(job);
+        await persistJob(job);
+      }
+
+      for (let ci = job.currentChapterIndex || 0; ci < job.chapters.length; ci++) {
+        if (await checkSuperseded()) return;
+        let chapter = job.chapters[ci];
+        if (chapter.status === "done") continue;
+
+        chapter = { ...chapter, status: "translating" };
+        job = { ...job, chapters: job.chapters.map((c, i) => (i === ci ? chapter : c)), currentChapterIndex: ci };
+        setActiveJob(job);
+
+        if (!chapter.glossaryChecked) {
+          try {
+            const terms = await extractGlossaryTerms(chapter.sourceText.slice(0, 12000), backendUrl, clientToken);
+            job = { ...job, glossary: mergeGlossary(job.glossary || {}, terms) };
+          } catch {
+            /* غير حرج لسير العمل، نكمل بدون تحديث القاموس لهذا الفصل */
+          }
+          chapter = { ...chapter, glossaryChecked: true };
+          job = { ...job, chapters: job.chapters.map((c, i) => (i === ci ? chapter : c)) };
+          setActiveJob(job);
+        }
+
+        if (chapter.sourceTitle && !chapter.translatedTitle) {
+          if (await checkSuperseded()) return;
+          try {
+            const translatedTitle = await translateChunkWithRetry(chapter.sourceTitle, job.glossary, backendUrl, clientToken);
+            chapter = { ...chapter, translatedTitle };
+          } catch (e) {
+            job = { ...job, status: "paused", lastError: e.message || String(e) };
+            setActiveJob(job);
+            await persistJob(job);
+            return;
+          }
+          job = { ...job, chapters: job.chapters.map((c, i) => (i === ci ? chapter : c)) };
+          setActiveJob(job);
+        }
+
+        await persistJob(job); // نقطة استعادة عند بداية الفصل (بعد القاموس والعنوان)
+
+        for (let chi = chapter.chunkIndex || 0; chi < chapter.chunks.length; chi++) {
+          if (await checkSuperseded()) return;
+          let translated;
+          try {
+            translated = await translateChunkWithRetry(chapter.chunks[chi], job.glossary, backendUrl, clientToken);
+          } catch (e) {
+            job = { ...job, status: "paused", lastError: e.message || String(e) };
+            setActiveJob(job);
+            await persistJob(job);
+            return;
+          }
+          chapter = {
+            ...chapter,
+            translatedText: chapter.translatedText ? chapter.translatedText + "\n\n" + translated : translated,
+            chunkIndex: chi + 1,
+          };
+          job = { ...job, chapters: job.chapters.map((c, i) => (i === ci ? chapter : c)) };
+          setActiveJob(job); // تحديث حي للواجهة، بلا كتابة تخزين على كل مقطع لتفادي البطء
+        }
+
+        chapter = { ...chapter, status: "done" };
+        job = { ...job, chapters: job.chapters.map((c, i) => (i === ci ? chapter : c)) };
+        setActiveJob(job);
+        await persistJob(job); // نقطة استعادة بعد اكتمال كل فصل
+      }
+
+      job = { ...job, status: "done" };
+      setActiveJob(job);
+      await persistJob(job);
+    } catch (e) {
+      job = { ...job, status: "paused", lastError: (e && e.message) || String(e) };
+      setActiveJob(job);
+      await persistJob(job);
+    }
+  }
+
+  async function handleCreateTranslationJob({ title, file }) {
+    const job = {
+      id: uid(),
+      novelTitle: title,
+      fileName: file.name,
+      fileSize: file.size,
+      status: "extracting",
+      chapters: [],
+      totalChapters: 0,
+      currentChapterIndex: 0,
+      glossary: {},
+      createdAt: Date.now(),
+      addedToLibraryNovelId: null,
+      lastError: null,
+      _file: file,
+    };
+    setActiveJob(job);
+    await persistJob(job);
+    setCurrentTranslateJobId(job.id);
+    setView("translateJob");
+    runTranslationJob(job, translateConfig.backendUrl, translateConfig.clientToken);
+  }
+
+  async function openTranslateJob(jobId) {
+    setCurrentTranslateJobId(jobId);
+    if (!activeJob || activeJob.id !== jobId) {
+      const j = await loadTranslateJob(jobId);
+      setActiveJob(j);
+    }
+    setView("translateJob");
+  }
+
+  function handleResumeJob() {
+    if (!activeJob) return;
+    runTranslationJob(activeJob, translateConfig.backendUrl, translateConfig.clientToken);
+  }
+
+  async function handleSaveChapterEdit(chapterIndex, newText) {
+    if (!activeJob) return;
+    const updated = {
+      ...activeJob,
+      chapters: activeJob.chapters.map((c, i) => (i === chapterIndex ? { ...c, translatedText: newText } : c)),
+    };
+    setActiveJob(updated);
+    await persistJob(updated);
+  }
+
+  async function handleAddJobToLibrary() {
+    if (!activeJob || activeJob.addedToLibraryNovelId) return;
+    const novel = { id: uid(), title: activeJob.novelTitle, cover: null, createdAt: Date.now() };
+    const chaptersForLibrary = [...activeJob.chapters]
+      .sort((a, b) => a.index - b.index)
+      .map((c) => ({
+        id: uid(),
+        number: c.index + 1,
+        title: c.translatedTitle || c.sourceTitle || "",
+        content: c.translatedText || "",
+        updatedAt: Date.now(),
+      }));
+
+    const updatedNovels = [novel, ...novels];
+    setNovels(updatedNovels);
+    await saveNovels(updatedNovels);
+    await saveChapters(novel.id, chaptersForLibrary);
+    setChaptersCache((prev) => ({ ...prev, [novel.id]: chaptersForLibrary }));
+
+    const updatedJob = { ...activeJob, addedToLibraryNovelId: novel.id };
+    setActiveJob(updatedJob);
+    await persistJob(updatedJob);
+  }
+
+  async function handleDeleteTranslationJob(jobId) {
+    if (runningJobIdRef.current === jobId) runningJobIdRef.current = null;
+    await deleteTranslateJobKey(jobId);
+    setTranslateJobsIndex((prev) => {
+      const next = prev.filter((j) => j.id !== jobId);
+      saveTranslateJobsIndex(next);
+      return next;
+    });
+    if (currentTranslateJobId === jobId) {
+      setActiveJob(null);
+      setCurrentTranslateJobId(null);
+    }
+  }
+
+  async function handleSaveTranslateConfig(cfg) {
+    setTranslateConfig(cfg);
+    await saveTranslateConfig(cfg);
+  }
+
+  const shell = {
+    minHeight: "100vh",
+    background: "#130d0c",
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif",
+    direction: "rtl",
+    maxWidth: 480,
+    margin: "0 auto",
+    position: "relative",
+    zIndex: 0,
+  };
+
+  if (loading) {
+    return (
+      <div style={{ ...shell, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#a8815a", fontSize: 14 }}>جارٍ التحميل...</span>
+      </div>
+    );
+  }
+
+  const currentNovel = novels.find((n) => n.id === currentNovelId);
+  const currentChapters = chaptersCache[currentNovelId] || [];
+  const currentChapter = currentChapters.find((c) => c.id === currentChapterId);
+  const currentProgress = currentNovelId ? novelProgress[currentNovelId] : null;
+  const nextNumber = currentChapters.length
+    ? Math.max(...currentChapters.map((c) => c.number)) + 1
+    : 1;
+
+  const historyEntries = historyOrder
+    .map((id) => {
+      const novel = novels.find((n) => n.id === id);
+      const progress = novelProgress[id];
+      if (!novel || !progress) return null;
+      return { novelId: id, novel, progress };
+    })
+    .filter(Boolean);
+  const historyStillLoading = historyOrder.length > 0 && historyEntries.length === 0;
+
+  const topLevelViews = ["library", "translate", "history", "settings"];
+
+  return (
+    <div style={shell}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "100%",
+          maxWidth: 480,
+          height: "100%",
+          zIndex: -1,
+          pointerEvents: "none",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: -50,
+            right: -30,
+            width: 220,
+            height: 220,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(212,175,55,0.15) 0%, rgba(212,175,55,0.04) 45%, transparent 72%)",
+          }}
+        />
+        <CloudMotif width={230} height={115} color="#241715" opacity={0.9} style={{ position: "absolute", bottom: 70, left: -40 }} />
+        <CloudMotif width={170} height={85} color="#1f1512" opacity={0.9} style={{ position: "absolute", top: "40%", right: -45 }} />
+      </div>
+
+      {view === "library" && (
+        <LibraryView
+          novels={novels}
+          onOpenNovel={openNovel}
+          onAddNovel={() => setView("addNovel")}
+          onDeleteNovel={handleDeleteNovel}
+        />
+      )}
+
+      {view === "history" && (
+        <HistoryView
+          entries={historyEntries}
+          loadingMore={historyStillLoading}
+          onOpenDetail={(entry) => {
+            setCurrentNovelId(entry.novelId);
+            setView("historyDetail");
+          }}
+          onContinueReading={(entry) => {
+            openReaderFor(entry.novelId, entry.progress.chapterId, entry.progress.scrollOffset);
+          }}
+        />
+      )}
+
+      {view === "settings" && (
+        <SettingsView
+          novelsCount={novels.length}
+          onExport={handleExportBackup}
+          onImportFile={handleImportBackup}
+          onClearAll={handleClearAll}
+          translateConfig={translateConfig}
+          onSaveTranslateConfig={handleSaveTranslateConfig}
+        />
+      )}
+
+      {view === "translate" && (
+        <TranslateHubView
+          jobs={translateJobsIndex}
+          onOpenJob={openTranslateJob}
+          onNewJob={() => setView("translateNew")}
+          onDeleteJob={handleDeleteTranslationJob}
+          backendConfigured={!!translateConfig.backendUrl}
+        />
+      )}
+
+      {view === "translateNew" && (
+        <NewTranslationView
+          onBack={() => setView("translate")}
+          onCreate={handleCreateTranslationJob}
+          backendConfigured={!!translateConfig.backendUrl}
+        />
+      )}
+
+      {view === "translateJob" && activeJob && (
+        <TranslationJobView
+          job={activeJob}
+          onBack={() => setView("translate")}
+          onResume={handleResumeJob}
+          onAddToLibrary={handleAddJobToLibrary}
+          onSaveChapterEdit={handleSaveChapterEdit}
+        />
+      )}
+
+      {view === "addNovel" && <AddNovelView onBack={() => setView("library")} onSave={handleAddNovel} />}
+
+      {view === "novel" && currentNovel && (
+        <NovelView
+          novel={currentNovel}
+          chapters={currentChapters}
+          progress={currentProgress}
+          onBack={() => setView("library")}
+          onOpenReader={(chapterId) => openReaderFor(currentNovel.id, chapterId, 0)}
+          onEditChapter={(chapterId) => {
+            setCurrentChapterId(chapterId);
+            setEditorReturnView("novel");
+            setView("editChapter");
+          }}
+          onAddChapter={() => setView("addChapter")}
+          onDeleteChapter={handleDeleteChapter}
+          onContinueReading={() => {
+            if (currentProgress) openReaderFor(currentNovel.id, currentProgress.chapterId, currentProgress.scrollOffset);
+          }}
+        />
+      )}
+
+      {view === "addChapter" && (
+        <ChapterEditor
+          initial={null}
+          nextNumber={nextNumber}
+          onBack={() => setView("novel")}
+          onSave={handleAddChapter}
+        />
+      )}
+
+      {view === "editChapter" && currentChapter && (
+        <ChapterEditor
+          initial={currentChapter}
+          nextNumber={currentChapter.number}
+          onBack={backFromEditor}
+          onSave={(data) => handleUpdateChapter(currentChapter.id, data)}
+        />
+      )}
+
+      {view === "reader" && currentNovel && (
+        <ReaderView
+          key={currentNovel.id}
+          novel={currentNovel}
+          chapters={currentChapters}
+          initialChapterId={readerTarget.chapterId}
+          initialOffset={readerTarget.offset}
+          onBack={() => setView("novel")}
+          onEditChapter={(chapterId) => {
+            setCurrentChapterId(chapterId);
+            setEditorReturnView("reader");
+            setView("editChapter");
+          }}
+          onSaveProgress={(p) => handleSaveProgress(currentNovel.id, p)}
+        />
+      )}
+
+      {view === "historyDetail" && currentNovel && currentProgress && (
+        <HistoryDetailView
+          novel={currentNovel}
+          progress={currentProgress}
+          onBack={() => setView("history")}
+          onContinueReading={() => openReaderFor(currentNovel.id, currentProgress.chapterId, currentProgress.scrollOffset)}
+          onOpenNovel={() => openNovel(currentNovel.id)}
+        />
+      )}
+
+      {topLevelViews.includes(view) && <BottomNav active={view} onChange={handleTabChange} />}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+
+<script>
+  // تسجيل الـ Service Worker لتفعيل عمل التطبيق بدون إنترنت
+  // (يعمل فقط عند تشغيل الموقع عبر https أو من جهاز محلي عبر خادم، وليس عبر فتح الملف مباشرة)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
